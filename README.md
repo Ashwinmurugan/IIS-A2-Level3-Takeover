@@ -1,12 +1,12 @@
 # Level 3 Takeover Simulation
 
-README prose word count: 979 (excluding commands and this line).
+README prose word count: 1238 (excluding commands and this line).
 
 ## Project status
 
 I am developing this project for Intelligent Interactive Systems Assignment 2 at the University of Birmingham, following my A1 review of speech and multimodal takeover warnings. The desktop prototype combines webcam head and eye cues, keyboard driving, contextual warnings and an observer log.
 
-Implemented scenarios are a tunnel boundary, a stationary vehicle appearing ahead, and rain with simulated visibility loss. Lane following, manual takeover, warning escalation, fallback braking, hazard indicators and demo audio priority are implemented. Road sensing and vehicle dynamics are simulated. Vibration is represented visually. Camera tracking uses Google's pretrained model. Roadworks, real haptic hardware, external music services and real vehicle integration remain planned extensions.
+Implemented scenarios are a tunnel boundary, a stationary vehicle appearing ahead, and rain with simulated visibility loss. Lane following, manual takeover, warning escalation, fallback braking, hazard indicators and demo audio priority are implemented. Road sensing and vehicle dynamics are simulated. Vibration is represented visually. Camera tracking uses Google's pretrained model. Roadworks, real haptic hardware, broader external media control and real vehicle integration remain planned extensions.
 
 ## Setup and running
 
@@ -36,7 +36,7 @@ Edit scenarios.json before launch. Each scenario has a starting speed, lane and 
 
 The tunnel begins at 500 metres and is 200 metres long. Exit produces an availability announcement without engaging automation. The obstacle appears when our car reaches 100 metres, at road position 400 metres, and becomes detectable within 350 metres. Thus the initial gap is 300 metres. Adjacent-lane obstacles do not trigger a takeover request. Emergency braking uses gap, speed and estimated stopping distance. An unavoidable collision produces an explicit stopped collision outcome.
 
-Rain starts at 500 metres and evolves over 35 seconds even while stopped. Intensity drives the rain drawing and simulated visibility. Automation reduces speed towards 30 km/h in rain and requests takeover below the configured visibility limit. Recovery must persist for three seconds. An existing takeover request remains active until takeover or fallback, even if visibility improves.
+Rain starts at 350 metres and evolves over 35 seconds even while stopped. Intensity drives the rain drawing and simulated visibility. Automation reduces speed towards 30 km/h in rain and requests takeover below the configured visibility limit. Recovery must persist for three seconds. An existing takeover request remains active until takeover or fallback, even if visibility improves.
 
 Rules include warning times, braking rates, margins and attention-prompt duration. The default tunnel warning thresholds are 15, 10 and 6 seconds. Other scenarios use elapsed response time after detection. Emergency braking uses 7 m/s² and fallback uses 2.5 m/s². These are experimental settings, not validated driving or regulatory requirements. Physical grip, traffic gaps and real road perception are outside this model.
 
@@ -73,3 +73,13 @@ I used ChatGPT/Codex for requirements discussion, a concept image, implementatio
 
 src contains code, report is reserved for the report and diagrams, and evidence contains checks and screenshots. The report will identify the submitted commit and link the public repository and README. Publishing remains to be agreed. An accompanying ZIP is only needed for material unsuitable for the repository.
 
+
+### Phase 6 — Road obstruction, visible eye cues and audio priority
+
+I requested rain at 350 metres, a breakdown marker and an obstruction message that includes what to do. The spoken message is now “Obstruction ahead. Slow down and take control.” The road obstruction includes a warning triangle and raised bonnet cue as scenario dressing. The system does not diagnose a mechanical fault or recommend an unchecked lane change.
+
+The live eye panel now shows the current estimate, blendshape closure score and duration during driving. Detection thresholds remain unchanged pending camera review. Simulated seat and wheel symbols highlight during urgent warnings and braking. M controls generated demo audio; T plays the selected scenario's sample message.
+
+P enables or disables optional Spotify speech priority, also available with --spotify-priority. It lowers Spotify desktop audio sessions on the default Windows output to 15 percent of their previous session volume while speech plays. It restores that volume afterward or on normal shutdown, while preserving externally changed volume. It never changes device master volume. Other applications and browser-based Spotify are not targeted. Hard termination or OS failure cannot guarantee restoration. The log records attempts, absence of a session and failures.
+
+Pycaw provides session access (https://github.com/AndreMiras/pycaw). Fake-session tests passed for targeting, repeated calls, restoration and preserving a changed volume. A read-only Windows check found zero Spotify sessions during development, so live audio ducking remains unverified. All scenario and monitoring checks passed. Exact spoken wording and the 350-metre onset were checked. The eye panel's live accuracy and the visual breakdown marker await my review.

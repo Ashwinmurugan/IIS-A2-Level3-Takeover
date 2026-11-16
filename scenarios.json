@@ -1,6 +1,35 @@
 {
-  "tunnel": {"start_speed":45,"start_lane":1,"event_at":500,"tunnel_length":200},
-  "obstacle": {"start_speed":45,"start_lane":1,"event_at":100,"obstacle_at":400,"obstacle_lane":1,"detection_range":350},
-  "rain": {"start_speed":45,"start_lane":1,"event_at":500,"rain_duration":35,"rain_peak":0.9,"visibility_limit":60,"recovery_seconds":3},
-  "rules": {"request_seconds":15,"urgent_seconds":10,"fallback_seconds":6,"deceleration":2.5,"emergency_deceleration":7,"stop_margin":15,"attention_seconds":2,"rain_speed":30}
+  "tunnel": {
+    "start_speed": 45,
+    "start_lane": 1,
+    "event_at": 500,
+    "tunnel_length": 200
+  },
+  "obstacle": {
+    "start_speed": 45,
+    "start_lane": 1,
+    "event_at": 100,
+    "obstacle_at": 400,
+    "obstacle_lane": 1,
+    "detection_range": 350
+  },
+  "rain": {
+    "start_speed": 45,
+    "start_lane": 1,
+    "event_at": 350,
+    "rain_duration": 35,
+    "rain_peak": 0.9,
+    "visibility_limit": 60,
+    "recovery_seconds": 3
+  },
+  "rules": {
+    "request_seconds": 15,
+    "urgent_seconds": 10,
+    "fallback_seconds": 6,
+    "deceleration": 2.5,
+    "emergency_deceleration": 7,
+    "stop_margin": 15,
+    "attention_seconds": 2,
+    "rain_speed": 30
+  }
 }

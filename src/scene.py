@@ -41,6 +41,11 @@ def draw_road(canvas, car):
         width = 20+depth*110
         pygame.draw.rect(canvas,'#aa3b42',(x-width/2,y-width*.6,width,width*.6),border_radius=5)
         pygame.draw.rect(canvas,'#91b3c3',(x-width*.32,y-width*.55,width*.64,width*.2))
+        # Scenario dressing indicates a breakdown, not a diagnosed cause.
+        pygame.draw.line(canvas,'#ffca6c',(x-width*.2,y-width*.6),(x-width*.4,y-width*.85),3)
+        tx, ty = x+width*.7, y+10
+        size = max(8,width*.18)
+        pygame.draw.polygon(canvas,'#ffb34c',[(tx,ty-size),(tx-size,ty+size),(tx+size,ty+size)],3)
         for side in (-1,1):
             pygame.draw.circle(canvas,'#ffb04f',(int(x+side*width*.35),int(y-width*.14)),max(2,int(width*.055)))
     if car.scenario == 'rain' and car.rain_intensity > 0:

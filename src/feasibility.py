@@ -2,6 +2,7 @@
 import argparse
 import json
 from driving import Driving
+from audio_priority import SpotifyPriority
 from scenarios import load_settings, DEFAULT_PATH
 from scene import draw_road, draw_log
 from monitoring import Monitor, pose_from_rotation
@@ -82,12 +83,16 @@ class Camera:
 
 
 class Speech:
-    def __init__(self, events):
+    def __init__(self, events, spotify_enabled=False):
         self.requests = queue.Queue()
         self.busy = threading.Event()
         self.events = events
         self.closed = threading.Event()
-        threading.Thread(target=self.run, daemon=True).start()
+        self.spotify_enabled = threading.Event()
+        if spotify_enabled:
+            self.spotify_enabled.set()
+        self.thread = threading.Thread(target=self.run, daemon=True)
+        self.thread.start()
 
     def say(self, message='Take control. Automated driving ends at the tunnel.'):
         self.requests.put(message)
@@ -95,25 +100,39 @@ class Speech:
     def run(self):
         import pythoncom
         pythoncom.CoInitialize()
+        priority = None
         try:
             import win32com.client
             voice = win32com.client.Dispatch('SAPI.SpVoice')
+            try:
+                priority = SpotifyPriority(self.events.put)
+            except Exception as error:
+                self.events.put('Spotify integration unavailable: '+str(error))
             while not self.closed.wait(.02):
                 message = None
                 while not self.requests.empty():
                     message = self.requests.get_nowait()
+                if priority and not self.spotify_enabled.is_set():
+                    priority.restore()
                 if message is not None:
+                    if priority and self.spotify_enabled.is_set():
+                        priority.lower()
+                    self.events.put('Warning speech prioritised')
                     voice.Speak(message, 3)  # Async, replace obsolete speech.
                     self.busy.set()
                     self.events.put('Speech: ' + message)
                 if self.busy.is_set() and voice.Status.RunningState == 1:
                     self.busy.clear()
                     self.events.put('Speech completed')
+                    if priority:
+                        priority.restore()
             voice.Speak('', 3)
         except Exception as error:
             self.events.put('Speech unavailable: ' + str(error))
             self.busy.clear()
         finally:
+            if priority:
+                priority.restore()
             pythoncom.CoUninitialize()
 
 
@@ -127,6 +146,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--camera', type=int, default=0)
     parser.add_argument('--no-camera', action='store_true')
+    parser.add_argument('--spotify-priority', action='store_true', help='Lower Spotify audio during speech; restore afterwards')
     parser.add_argument('--smoke', action='store_true')
     parser.add_argument('--scenario', choices=['tunnel','obstacle','rain'], default='tunnel')
     parser.add_argument('--config', type=Path, default=DEFAULT_PATH)
@@ -137,7 +157,7 @@ def main():
         parser.error('Invalid scenario configuration: '+str(error))
     selected_scenario = args.scenario
     scenario_names = ['tunnel','obstacle','rain']
-    scenario_labels = ['1 Tunnel','2 Stopped vehicle','3 Heavy rain']
+    scenario_labels = ['1 Tunnel','2 Road obstruction','3 Heavy rain']
     scenario_buttons = [pygame.Rect(370+i*220,300,210,48) for i in range(3)]
     if args.smoke:
         os.environ['SDL_VIDEODRIVER'] = 'dummy'
@@ -151,7 +171,7 @@ def main():
     heading = pygame.font.SysFont('Segoe UI', 28, bold=True)
     alert_font = pygame.font.SysFont('Segoe UI', 32, bold=True)
     events = queue.Queue()
-    speech = None if args.smoke else Speech(events)
+    speech = None if args.smoke else Speech(events,args.spotify_priority)
     camera = None if args.smoke or args.no_camera else Camera(args.camera)
     history = deque(maxlen=500)
     log_scroll = 0
@@ -263,8 +283,14 @@ def main():
                         baseline = None
                         calibration_note = 'Hold still with eyes open for two seconds'
                         emit('Calibration requested; face forward with eyes open')
+                    elif event.key == pygame.K_p and speech:
+                        if speech.spotify_enabled.is_set():
+                            speech.spotify_enabled.clear()
+                        else:
+                            speech.spotify_enabled.set()
+                        emit('Spotify speech priority '+('enabled' if speech.spotify_enabled.is_set() else 'disabled'))
                     elif event.key == pygame.K_t and speech:
-                        speech.say('Take control. '+{'tunnel':'Automation ends at tunnel.','obstacle':'Stopped vehicle ahead.','rain':'Visibility is below the operating limit.'}[selected_scenario])
+                        speech.say({'tunnel':'Take control. Automation ends at tunnel.','obstacle':'Obstruction ahead. Slow down and take control.','rain':'Take control. Visibility is below the operating limit.'}[selected_scenario])
                     elif event.key == pygame.K_SPACE:
                         car.manual()
                     elif event.key == pygame.K_f:
@@ -333,7 +359,7 @@ def main():
 
             canvas.fill(BG)
             text('LEVEL 3 / TAKEOVER INTERFACE', 24, 18, face=heading)
-            text('Phase 5  /  Context-aware scenarios  |  TAB selects scenario', 24, 55, MUTED)
+            text('Phase 6  /  TAB scenarios  |  P toggles Spotify speech priority', 24, 55, MUTED)
             for rect in [(16, 100, 306, 670), (336, 100, 724, 670), (1074, 100, 350, 670)]:
                 pygame.draw.rect(canvas, PANEL, rect, border_radius=12)
             text('DRIVER MONITORING', 32, 118, TEAL)
@@ -346,11 +372,19 @@ def main():
                 wrap(status, 45, 230, 240)
             text(state, 32, 390, AMBER if state != 'Facing forward' else TEAL)
             text('Yaw / pitch: ' + ('--' if relative is None else f'{relative[0]:+.0f} / {relative[1]:+.0f}'), 32, 428)
-            text(eyes, 32, 463, AMBER if eyes == 'Eyes appear closed' else MUTED)
-            text(f'Head cue: {now - state_since:.1f}s', 32, 500, MUTED)
+            pygame.draw.rect(canvas,'#314553',(28,462,284,70),border_radius=8)
+            eye_color = AMBER if eyes == 'Eyes appear closed' else TEAL if eyes == 'Open estimate' else WHITE
+            pygame.draw.ellipse(canvas,eye_color,(36,476,32,17),2)
+            pygame.draw.circle(canvas,eye_color,(52,484),5)
+            text(eyes,77,470,eye_color,small)
+            score = yaw[2] if yaw is not None else float('nan')
+            elapsed_closed = 0 if monitor.closed_since is None else now-monitor.closed_since
+            eye_info = f'Closure score {score:.2f} / {elapsed_closed:.1f}s' if math.isfinite(score) else 'Eye estimate unavailable'
+            text(eye_info,36,503,WHITE,pygame.font.SysFont('Segoe UI',17))
+
             wrap(calibration_note, 32, 540, 265, TEAL)
             wrap('C sets your forward reference for head turns. Eye closure is an estimate, not a sleep diagnosis. Camera frames stay local.', 32, 620, 265)
-            text({'tunnel':'TUNNEL','obstacle':'STOPPED VEHICLE','rain':'HEAVY RAIN'}[selected_scenario], 354, 118, TEAL)
+            text({'tunnel':'TUNNEL','obstacle':'ROAD OBSTRUCTION','rain':'HEAVY RAIN'}[selected_scenario], 354, 118, TEAL)
             text(car.location_label,780,118,MUTED)
             draw_road(canvas, car)
             notice_active = now < car.notice_until and bool(car.notice)
@@ -392,8 +426,17 @@ def main():
                 pygame.draw.polygon(canvas, AMBER if lit else '#344556', [(cx-x*direction,650+y) for x,y in arrow])
             if car.hazards:
                 text('HAZARD LIGHTS ACTIVE', 550, 602, AMBER, small)
-            text('Simulated seat / wheel vibration: ' + ('ON' if car.stage >= 2 else 'OFF'), 370, 704, AMBER)
-            text('M demo audio: ' + ('paused for alert' if music_enabled and audio_paused else 'playing' if music_enabled else 'off'), 370, 735, MUTED)
+            vibration = car.stage >= 2
+            vibration_color = AMBER if vibration else MUTED
+            pygame.draw.lines(canvas,vibration_color,False,[(380,702),(380,722),(400,722),(405,735)],3)
+            pygame.draw.circle(canvas,vibration_color,(435,718),13,3)
+            if vibration:
+                for x in (365,456):
+                    pygame.draw.lines(canvas,AMBER,False,[(x,705),(x+4,713),(x,722),(x+4,730)],2)
+            text('Simulated vibration: '+('ACTIVE' if vibration else 'inactive'),475,704,vibration_color,small)
+            audio_label = 'Speech prioritised' if speech and speech.busy.is_set() else 'M demo audio '+('paused' if music_enabled and audio_paused else 'playing' if music_enabled else 'off')
+            spotify_label = ' | P Spotify '+('enabled' if speech and speech.spotify_enabled.is_set() else 'off')
+            text(audio_label+spotify_label,370,739,MUTED,small)
             text('LIVE EVENT LOG', 1092, 118, TEAL)
             log_scroll = draw_log(canvas, history, log_font, log_scroll)
             controls = [('W','Speed +'),('S','Brake'),('A','Left'),('D','Right'),('Q','Signal'),('E','Signal'),('F','Auto'),('SPACE','Manual'),('R','Reset'),('C','Calibrate'),('M','Audio'),('T','Speech'),('ESC','Exit')]
@@ -420,7 +463,7 @@ def main():
             pygame.display.flip()
             frames += 1
             if args.smoke:
-                pygame.image.save(canvas,str(ROOT / f'evidence/phase5-{selected_scenario}-{frames}.png'))
+                pygame.image.save(canvas,str(ROOT / f'evidence/phase6-{selected_scenario}-{frames}.png'))
                 started = True
                 if frames == 1:
                     car.distance = car.boundary
@@ -429,7 +472,7 @@ def main():
                         car.event_started = True
                 if frames == 2:
                     car.mode = 'Automated driving'
-                    car.request('Visibility is below the operating limit.' if selected_scenario == 'rain' else 'Stopped vehicle ahead.' if selected_scenario == 'obstacle' else 'Automation ends at tunnel.')
+                    car.request('Visibility is below the operating limit.' if selected_scenario == 'rain' else 'Obstruction ahead. Slow down.' if selected_scenario == 'obstacle' else 'Automation ends at tunnel.')
                 if frames == 3:
                     print('PASS: scenario selection, scene and contextual alert rendered')
                     running = False
@@ -440,6 +483,7 @@ def main():
             camera.close()
         if speech:
             speech.closed.set()
+            speech.thread.join(timeout=5)
         if not args.smoke:
             folder = ROOT / 'evidence/runs'
             folder.mkdir(exist_ok=True)

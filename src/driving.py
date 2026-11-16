@@ -156,7 +156,7 @@ class Driving:
     def request(self, reason):
         if self.stage == 0:
             self.stage, self.reason, self.request_at = 1,reason,self.elapsed
-            self.message = 'Take control. '+reason
+            self.message = 'Obstruction ahead. Slow down and take control.' if self.scenario == 'obstacle' else 'Take control. '+reason
             self.announce('Takeover requested: '+reason,self.message)
 
     def brake(self, emergency=False):
@@ -187,7 +187,7 @@ class Driving:
             if self.scenario == 'rain' and self.rain_restricted:
                 self.request('Visibility is below the operating limit.')
             if self.scenario == 'obstacle' and self.obstacle_threat:
-                self.request('Stopped vehicle ahead.')
+                self.request('Obstruction ahead. Slow down.')
         emergency_stop = (self.speed/3.6)**2/(2*r['emergency_deceleration'])
         if self.scenario == 'obstacle' and self.obstacle_threat and self.speed > 0 and self.gap <= emergency_stop+r['stop_margin']:
             self.brake(True)
