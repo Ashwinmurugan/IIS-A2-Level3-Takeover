@@ -1,5 +1,7 @@
 """Iteration 1: local webcam, keyboard driving and speech feasibility."""
 import argparse
+import json
+from driving import Driving
 from collections import deque
 import math
 import os
@@ -75,32 +77,38 @@ class Camera:
 
 class Speech:
     def __init__(self, events):
-        self.requests = queue.Queue(maxsize=1)
+        self.requests = queue.Queue()
         self.busy = threading.Event()
         self.events = events
+        self.closed = threading.Event()
         threading.Thread(target=self.run, daemon=True).start()
 
-    def say(self):
-        if self.busy.is_set():
-            return
-        self.busy.set()
-        self.requests.put_nowait('Take control. Automated driving ends at the tunnel.')
+    def say(self, message='Take control. Automated driving ends at the tunnel.'):
+        self.requests.put(message)
 
     def run(self):
+        import pythoncom
+        pythoncom.CoInitialize()
         try:
-            import pyttsx3
-            engine = pyttsx3.init()
-            engine.setProperty('rate', 165)
-            while True:
-                message = self.requests.get()
-                self.events.put('Speech playback started')
-                engine.say(message)
-                engine.runAndWait()
-                self.events.put('Speech playback completed')
-                self.busy.clear()
+            import win32com.client
+            voice = win32com.client.Dispatch('SAPI.SpVoice')
+            while not self.closed.wait(.02):
+                message = None
+                while not self.requests.empty():
+                    message = self.requests.get_nowait()
+                if message is not None:
+                    voice.Speak(message, 3)  # Async, replace obsolete speech.
+                    self.busy.set()
+                    self.events.put('Speech: ' + message)
+                if self.busy.is_set() and voice.Status.RunningState == 1:
+                    self.busy.clear()
+                    self.events.put('Speech completed')
+            voice.Speak('', 3)
         except Exception as error:
             self.events.put('Speech unavailable: ' + str(error))
-            self.busy.set()
+            self.busy.clear()
+        finally:
+            pythoncom.CoUninitialize()
 
 
 def advance(speed, position, distance, throttle, steer, dt):
@@ -120,7 +128,7 @@ def main():
         os.environ['SDL_AUDIODRIVER'] = 'dummy'
     pygame.init()
     screen = pygame.display.set_mode((1440, 850), pygame.RESIZABLE)
-    pygame.display.set_caption('IIS A2 - Iteration 1 feasibility')
+    pygame.display.set_caption('IIS A2 - Integrated tunnel simulation')
     canvas = pygame.Surface((1440, 850))
     font = pygame.font.SysFont('Segoe UI', 20)
     small = pygame.font.SysFont('Segoe UI', 17)
@@ -161,7 +169,23 @@ def main():
         text(line, x, y, color, small)
         return y + 26
 
-    log('Practice mode started')
+    records = []
+    def emit(message, spoken=''):
+        log(message)
+        records.append({'seconds': round(time.monotonic()-start, 3), 'event': message})
+        if spoken and speech:
+            speech.say(spoken)
+    car = Driving(emit)
+    music = None
+    music_enabled = False
+    if pygame.mixer.get_init():
+        rate = pygame.mixer.get_init()[0]
+        t = np.arange(rate * 2) / rate
+        wave = (np.sin(2*np.pi*220*t) + .3*np.sin(2*np.pi*330*t)) * 800
+        music = pygame.sndarray.make_sound(np.column_stack((wave, wave)).astype(np.int16))
+        channel = pygame.mixer.Channel(0)
+    audio_paused = False
+    emit('Tunnel scenario ready; experimental thresholds')
     try:
         while running:
             dt = min(clock.tick(60) / 1000, 0.1)
@@ -184,14 +208,25 @@ def main():
                     elif event.key == pygame.K_t and speech:
                         speech.say()
                     elif event.key == pygame.K_SPACE:
-                        manual = True
-                        log('Manual control selected')
+                        car.manual()
                     elif event.key == pygame.K_f:
-                        manual, position = False, 0.0
-                        log('Simulated lane following selected')
+                        car.automate()
                     elif event.key == pygame.K_r:
-                        speed, position, distance, manual = 45.0, 0.0, 0.0, True
-                        log('Practice road reset')
+                        car = Driving(emit)
+                        if speech:
+                            speech.say('Scenario reset. Manual control.')
+                        emit('Scenario reset')
+                    elif event.key == pygame.K_q:
+                        car.indicate(-1)
+                    elif event.key == pygame.K_e:
+                        car.indicate(1)
+                    elif event.key == pygame.K_m and music:
+                        music_enabled = not music_enabled
+                        if music_enabled:
+                            channel.play(music, loops=-1)
+                        else:
+                            channel.stop()
+                        emit('Demo audio ' + ('enabled' if music_enabled else 'disabled'))
             if calibrating:
                 if yaw is not None and stamp != last_sample:
                     samples.append(yaw)
@@ -209,17 +244,28 @@ def main():
                 state = 'Turned away' if abs(relative) > 25 else 'Facing forward'
             if state != previous_state:
                 previous_state, state_since = state, now
-                log('Head cue: ' + state)
+                emit('Head cue: ' + state)
             while not events.empty():
-                log(events.get_nowait())
+                emit(events.get_nowait())
             keys = pygame.key.get_pressed()
-            throttle = int(keys[pygame.K_w]) - int(keys[pygame.K_s]) if manual else 0
-            steer = int(keys[pygame.K_d]) - int(keys[pygame.K_a]) if manual else 0
-            speed, position, distance = advance(speed, position, distance, throttle, steer, dt)
+            manual = car.mode == 'Manual control'
+            throttle = int(keys[pygame.K_w]) - int(keys[pygame.K_s])
+            steering_input = int(keys[pygame.K_d]) - int(keys[pygame.K_a])
+            car.update(dt, throttle, steering_input, state)
+            speed, position, distance, steer = car.speed, car.position, car.distance, car.steer
+            pause_audio = bool(car.stage or (speech and speech.busy.is_set()))
+            if music_enabled and music:
+                if pause_audio:
+                    channel.pause()
+                else:
+                    channel.unpause()
+            if pause_audio != audio_paused:
+                audio_paused = pause_audio
+                emit('Demo audio priority: ' + ('paused' if pause_audio else 'released'))
 
             canvas.fill(BG)
             text('LEVEL 3 / TAKEOVER INTERFACE', 24, 18, face=heading)
-            text('Iteration 1  /  Camera, driving and speech feasibility', 24, 55, MUTED)
+            text('Phase 2  /  Integrated tunnel takeover simulation', 24, 55, MUTED)
             for rect in [(16, 100, 306, 670), (336, 100, 724, 670), (1074, 100, 350, 670)]:
                 pygame.draw.rect(canvas, PANEL, rect, border_radius=12)
             text('DRIVER MONITORING', 32, 118, TEAL)
@@ -233,28 +279,39 @@ def main():
             text(state, 32, 390, AMBER if state != 'Facing forward' else TEAL)
             text('Relative yaw: ' + ('--' if relative is None else f'{relative:+.1f} degrees'), 32, 430)
             text(f'Current cue: {now - state_since:.1f}s', 32, 464, MUTED)
-            wrap('Calibrating: hold forward...' if calibrating else 'C  Calibrate while facing the screen', 32, 515, 270)
-            wrap('Head orientation is an experimental cue. Camera frames stay local and are not recorded.', 32, 595, 265)
-            text('PRACTICE ROAD', 354, 118, TEAL)
+            wrap('Calibrating: hold forward...' if calibrating else 'C  Set your forward-facing position', 32, 515, 270)
+            wrap('Calibration learns your forward position so head turns can be estimated. Face the road view and hold still for two seconds. Frames stay local.', 32, 595, 265)
+            text('TUNNEL APPROACH', 354, 118, TEAL)
+            text(f'{max(0,car.boundary-distance):.0f} m to boundary', 780, 118, MUTED)
             pygame.draw.rect(canvas, '#647b89', (354, 160, 688, 330))
             pygame.draw.polygon(canvas, '#344e45', [(354, 260), (1042, 260), (1042, 490), (354, 490)])
-            center = 698 - position * 120
+            canvas.set_clip(pygame.Rect(354, 228, 688, 262))
+            center = 698 + (.5-position) * 300
             pygame.draw.polygon(canvas, '#333b46', [(678, 260), (718, 260), (center + 300, 490), (center - 300, 490)])
             for i in range(12):
                 depth = ((i / 12 + distance / 150) % 1) ** 2
                 y = 260 + depth * 230
                 x = 698 + (center - 698) * depth
                 pygame.draw.line(canvas, '#f0ede0', (x, y), (x, y + 5 + depth * 12), max(1, int(depth * 5)))
+            canvas.set_clip(None)
+            pygame.draw.rect(canvas, '#18212b', (354, 162, 688, 65))
+            wrap(car.message, 369, 174, 660, '#ff7777' if car.stage >= 2 else AMBER)
+            tunnel_size = int(20 + 12 * max(0, min(1, 1-(car.boundary-distance)/500)))
+            pygame.draw.rect(canvas, '#19242b', (698-tunnel_size, 260-tunnel_size, tunnel_size*2, tunnel_size))
+            pygame.draw.arc(canvas, '#8394a0', (698-tunnel_size, 260-tunnel_size, tunnel_size*2, tunnel_size*2), 0, math.pi, 5)
             text(f'{speed:05.1f} km/h', 380, 520, face=heading)
-            text('MANUAL CONTROL' if manual else 'AUTOMATION ACTIVE', 680, 526, TEAL)
+            text(car.mode, 680, 526, TEAL)
             text(f'Distance travelled  {distance:.0f} m', 380, 568, MUTED)
-            text('Lane offset  ' + f'{position:+.2f}', 680, 568, AMBER if abs(position) > .8 else MUTED)
+            text(f'Lane {car.lane+1}  |  offset {position-car.lane:+.2f}', 680, 568, MUTED)
             wheel = (690, 650)
             pygame.draw.circle(canvas, '#91a3b2', wheel, 45, 5)
             angle = steer * .65
             dx, dy = math.cos(angle) * 39, math.sin(angle) * 39
             pygame.draw.line(canvas, WHITE, (690-dx, 650-dy), (690+dx, 650+dy), 5)
-            text('T  Play sample takeover speech', 380, 717)
+            if car.signal and int(now*2)%2 == 0:
+                text('< LEFT' if car.signal < 0 else 'RIGHT >', 540 if car.signal < 0 else 790, 640, TEAL)
+            text('Seat / wheel vibration (simulated): ' + ('ON' if car.stage >= 2 else 'OFF'), 370, 704, AMBER)
+            text('M demo audio: ' + ('paused for alert' if music_enabled and audio_paused else 'playing' if music_enabled else 'off'), 370, 735, MUTED)
             text('LIVE EVENT LOG', 1092, 118, TEAL)
             y = 165
             for elapsed, message in list(history)[-6:]:
@@ -262,18 +319,24 @@ def main():
                 y = wrap(message, 1092, y + 21, 308) + 5
                 if y > 704:
                     break
-            text('W/S speed   A/D steer   SPACE manual   F automation   R reset   C calibrate   ESC exit', 24, 793)
-            text('Feasibility build. Full warning sequence, haptics indicators and media priority are pending.', 24, 823, MUTED, small)
+            text('W/S speed  A/D steer  Q/E indicators  SPACE manual  F automate  R reset  C calibrate  M audio  T speech  ESC exit', 24, 793)
+            text('Experimental simulation. Camera cues do not prove readiness. Boundary data is scripted; vehicle behaviour is simplified.', 24, 823, MUTED, small)
             screen.blit(pygame.transform.smoothscale(canvas, screen.get_size()), (0, 0))
             pygame.display.flip()
             frames += 1
             if args.smoke and frames == 3:
-                pygame.image.save(canvas, str(ROOT / 'evidence/feasibility-smoke.png'))
+                pygame.image.save(canvas, str(ROOT / 'evidence/phase2-smoke.png'))
                 print('PASS: application rendered 3 frames without camera or speech')
                 running = False
     finally:
         if camera:
             camera.close()
+        if speech:
+            speech.closed.set()
+        if not args.smoke:
+            folder = ROOT / 'evidence/runs'
+            folder.mkdir(exist_ok=True)
+            (folder / (str(time.time_ns()) + '.json')).write_text(json.dumps(records, indent=2))
         pygame.quit()
 
 

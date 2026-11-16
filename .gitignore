@@ -10,3 +10,4 @@ Thumbs.db
 
 models/*.task
 
+evidence/runs/

@@ -1,16 +1,16 @@
 # Level 3 Takeover Simulation
 
-README prose word count: 563 (excluding commands and this line).
+README prose word count: 868 (excluding commands and this line).
 
 ## Project status
 
 I am developing this project for Intelligent Interactive Systems Assignment 2 at the University of Birmingham, following my A1 review of speech and multimodal takeover warnings.
 
-Iteration 1 is a feasibility prototype with three panels, webcam head-direction estimation, calibration, a keyboard-controlled practice road, sample speech and an event log. The full tunnel warning sequence, escalation, simulated deceleration, media priority and vibration indicators are planned. Vehicle movement is simplified. The road currently supports practice only.
+Iteration 1 is a feasibility prototype with three panels, webcam head-direction estimation, calibration, a keyboard-controlled practice road, sample speech and an event log. Phase 2 now adds gradual lane centring, manual lane changes and indicators, a tunnel warning sequence, head-turn prompts, escalation, simulated deceleration, demo audio priority and simulated vibration status. Vehicle movement is simplified. Other road scenarios remain planned.
 
 ## Technology and setup
 
-Python 3.12, Pygame, OpenCV through opencv-contrib-python, MediaPipe and pyttsx3 are used. Exact package versions are in requirements.txt. The current local environment uses the desktop application's bundled Python. Other reviewers should install Python 3.12 and create their own environment on Windows.
+Python 3.12, Pygame, OpenCV through opencv-contrib-python, MediaPipe and Windows SAPI through pywin32 are used. pyttsx3 remains installed from the feasibility iteration. Exact package versions are in requirements.txt. The current local environment uses the desktop application's bundled Python. Other reviewers should install Python 3.12 and create their own environment on Windows.
 
 ```powershell
 py -3.12 -m venv .venv
@@ -27,7 +27,7 @@ The model is downloaded from Google's official MediaPipe distribution. The downl
 - C calibrates while I face the screen and hold still for two seconds.
 - W/S change speed and A/D steer in manual mode.
 - F selects simulated lane following. Space selects manual control.
-- T plays a sample takeover message. R resets the road. Escape exits.
+- T plays a sample takeover message. Q/E toggle indicators. M toggles generated demo audio. R resets the tunnel scenario. Escape exits.
 - Add --no-camera to run without the webcam, or --camera 1 to try another device.
 - Run check_feasibility.py for driving calculations and a brief local camera check.
 - Run src/feasibility.py --smoke for an automatic rendering check without camera or speech.
@@ -58,3 +58,15 @@ The face model is pretrained by Google. The application uses MediaPipe's documen
 
 src contains code, report is reserved for the report and diagrams, and evidence holds checks and screenshots. The report will link the public GitHub repository, README and submitted commit. Publishing details remain to be agreed. A ZIP is only needed for material that cannot reasonably go in the repository.
 
+
+### 16 November 2026 — Integrated tunnel interaction
+
+After trying the first build, I confirmed that the camera and keyboard commands worked. I asked for gradual centring, spoken control changes, lane indicators and integrated warnings before visual refinement. Codex implemented these changes following my approval.
+
+The tunnel is placed 500 metres along the simulated road. Initial and urgent requests use experimental 15-second and 10-second time-to-boundary thresholds. A sustained two-second head turn after a request can trigger an attention prompt. Missing tracking does not suppress timed escalation. Simulated braking begins at six seconds remaining or when the calculated stopping distance plus a 15-metre margin requires it. Deceleration is 2.5 metres per second squared. These choices are prototype parameters, not validated driving recommendations.
+
+The checks in src/driving.py passed for gradual centring, missing-camera fallback, stopping before the boundary, takeover continuity and attention prompting. Braking was checked at 20, 45 and 100 km/h with 30, 60 and 120 updates per second. The rendering check passed. A test initially allowed too little time after warning onset for the attention prompt; its duration was corrected. A road drawing overflow was also corrected.
+
+Speech uses Windows SAPI asynchronously so new control messages can replace obsolete speech. M enables a locally generated tone as demonstration media. Warning activity and speech pause it. Saved run events contain timestamps and decisions, without webcam frames, and are excluded from Git until selected for evidence. Live calibration, spoken transitions, audio interruption and steering feel await my Phase 2 review.
+
+Run src/driving.py to repeat the behavioural checks. The initial head-angle threshold and all driving logic remain simplified. Automatic lane changes and real traffic perception are future work.
