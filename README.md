@@ -1,6 +1,6 @@
 # Level 3 Takeover Simulation
 
-README prose word count: 1238 (excluding commands and this line).
+README prose word count: 1373 (excluding commands and this line).
 
 ## Project status
 
@@ -83,3 +83,10 @@ The live eye panel now shows the current estimate, blendshape closure score and 
 P enables or disables optional Spotify speech priority, also available with --spotify-priority. It lowers Spotify desktop audio sessions on the default Windows output to 15 percent of their previous session volume while speech plays. It restores that volume afterward or on normal shutdown, while preserving externally changed volume. It never changes device master volume. Other applications and browser-based Spotify are not targeted. Hard termination or OS failure cannot guarantee restoration. The log records attempts, absence of a session and failures.
 
 Pycaw provides session access (https://github.com/AndreMiras/pycaw). Fake-session tests passed for targeting, repeated calls, restoration and preserving a changed volume. A read-only Windows check found zero Spotify sessions during development, so live audio ducking remains unverified. All scenario and monitoring checks passed. Exact spoken wording and the 350-metre onset were checked. The eye panel's live accuracy and the visual breakdown marker await my review.
+
+
+### Phase 7 — Broader audio priority and stopping explanations
+
+I approved extending audio priority beyond Spotify and explaining why the car stops. P now enables lowering process-owned audio sessions on the default Windows output, excluding the prototype process. The --audio-priority option enables it at launch; the former option remains an alias. Session names and restoration outcomes are logged. System sounds and sessions without an identifiable process are skipped. Other outputs and exclusive audio paths are unverified. The earlier Spotify-only description records the previous iteration.
+
+Fallback speech now explains that takeover was not confirmed. Emergency braking explains the obstruction. The dashboard retains the cause while stopped. Looking away remains an attention cue rather than the stopping cause. Fake-session tests cover protecting the prototype audio, reduction, repeated calls and restoration. Live cross-application audio testing remains pending.

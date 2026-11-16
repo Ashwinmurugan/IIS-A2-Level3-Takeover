@@ -2,7 +2,7 @@
 import argparse
 import json
 from driving import Driving
-from audio_priority import SpotifyPriority
+from audio_priority import AudioPriority
 from scenarios import load_settings, DEFAULT_PATH
 from scene import draw_road, draw_log
 from monitoring import Monitor, pose_from_rotation
@@ -105,9 +105,9 @@ class Speech:
             import win32com.client
             voice = win32com.client.Dispatch('SAPI.SpVoice')
             try:
-                priority = SpotifyPriority(self.events.put)
+                priority = AudioPriority(self.events.put)
             except Exception as error:
-                self.events.put('Spotify integration unavailable: '+str(error))
+                self.events.put('Other audio integration unavailable: '+str(error))
             while not self.closed.wait(.02):
                 message = None
                 while not self.requests.empty():
@@ -146,7 +146,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--camera', type=int, default=0)
     parser.add_argument('--no-camera', action='store_true')
-    parser.add_argument('--spotify-priority', action='store_true', help='Lower Spotify audio during speech; restore afterwards')
+    parser.add_argument('--audio-priority', '--spotify-priority', dest='spotify_priority', action='store_true', help='Lower Other audio audio during speech; restore afterwards')
     parser.add_argument('--smoke', action='store_true')
     parser.add_argument('--scenario', choices=['tunnel','obstacle','rain'], default='tunnel')
     parser.add_argument('--config', type=Path, default=DEFAULT_PATH)
@@ -288,7 +288,7 @@ def main():
                             speech.spotify_enabled.clear()
                         else:
                             speech.spotify_enabled.set()
-                        emit('Spotify speech priority '+('enabled' if speech.spotify_enabled.is_set() else 'disabled'))
+                        emit('Other audio speech priority '+('enabled' if speech.spotify_enabled.is_set() else 'disabled'))
                     elif event.key == pygame.K_t and speech:
                         speech.say({'tunnel':'Take control. Automation ends at tunnel.','obstacle':'Obstruction ahead. Slow down and take control.','rain':'Take control. Visibility is below the operating limit.'}[selected_scenario])
                     elif event.key == pygame.K_SPACE:
@@ -359,7 +359,7 @@ def main():
 
             canvas.fill(BG)
             text('LEVEL 3 / TAKEOVER INTERFACE', 24, 18, face=heading)
-            text('Phase 6  /  TAB scenarios  |  P toggles Spotify speech priority', 24, 55, MUTED)
+            text('Phase 6  /  TAB scenarios  |  P toggles Other audio speech priority', 24, 55, MUTED)
             for rect in [(16, 100, 306, 670), (336, 100, 724, 670), (1074, 100, 350, 670)]:
                 pygame.draw.rect(canvas, PANEL, rect, border_radius=12)
             text('DRIVER MONITORING', 32, 118, TEAL)
@@ -407,6 +407,10 @@ def main():
             detail = car.reason+' Press SPACE.' if car.stage in (1,2) else 'Braking active - preparing to stop' if car.stage == 4 else 'SPACE to take manual control' if car.stage else car.message
             if notice_active and not car.stage:
                 detail = car.notice
+            if car.mode == 'Stopped':
+                detail = car.stop_reason
+            elif car.mode == 'Automatic slowing':
+                detail = 'No takeover confirmed. Slowing automatically.'
             if car.collision:
                 detail = 'Stopping margin insufficient. R restarts scenario.'
             detail_font = small if small.size(detail)[0] <= 605 else pygame.font.SysFont('Segoe UI',17)
@@ -435,7 +439,7 @@ def main():
                     pygame.draw.lines(canvas,AMBER,False,[(x,705),(x+4,713),(x,722),(x+4,730)],2)
             text('Simulated vibration: '+('ACTIVE' if vibration else 'inactive'),475,704,vibration_color,small)
             audio_label = 'Speech prioritised' if speech and speech.busy.is_set() else 'M demo audio '+('paused' if music_enabled and audio_paused else 'playing' if music_enabled else 'off')
-            spotify_label = ' | P Spotify '+('enabled' if speech and speech.spotify_enabled.is_set() else 'off')
+            spotify_label = ' | P Other audio '+('enabled' if speech and speech.spotify_enabled.is_set() else 'off')
             text(audio_label+spotify_label,370,739,MUTED,small)
             text('LIVE EVENT LOG', 1092, 118, TEAL)
             log_scroll = draw_log(canvas, history, log_font, log_scroll)

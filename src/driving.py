@@ -25,6 +25,7 @@ class Driving:
         self.notice_until = 0.0
         self.last_rejection = -100.0
         self.message = 'F activates automated driving'
+        self.stop_reason = ''
         self.reason = ''
         self.request_at = None
         self.event_started = self.detected = self.collision = False
@@ -169,7 +170,8 @@ class Driving:
                 self.announce(f'Emergency decision: gap {self.gap:.1f} m; estimated braking distance {stopping:.1f} m; margin {self.rules["stop_margin"]} m')
             self.mode, self.hazards, self.signal = mode,True,0
             self.stage = 4 if emergency else 3
-            self.message = 'Emergency braking - stopped vehicle ahead' if emergency else 'Slowing automatically'
+            self.stop_reason = 'Stopped to avoid the obstruction.' if emergency else 'Stopped because takeover was not confirmed.'
+            self.message = 'Obstruction ahead. Braking automatically.' if emergency else 'No takeover confirmed. Slowing automatically.'
             self.announce(self.message+'; hazard lights active',self.message)
 
     def update(self, dt, throttle, steer, head):
@@ -223,7 +225,7 @@ class Driving:
                 self.speed = max(0,self.speed-deceleration*3.6*dt)
                 if self.speed == 0:
                     self.mode = 'Stopped'
-                    self.announce('Simulated vehicle stopped','Vehicle stopped.')
+                    self.announce('Vehicle '+self.stop_reason.lower(), 'Vehicle '+self.stop_reason.lower())
                     if self.pending_manual:
                         self.pending_manual = False
                         self.manual()
