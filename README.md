@@ -1,6 +1,6 @@
 # Level 3 Takeover Simulation
 
-README prose word count: 1688 (excluding commands and this line).
+README prose word count: 1706 (excluding commands and this line).
 
 ## Project status
 
@@ -28,6 +28,7 @@ Choose a scenario with the buttons or 1/2/3. Press C while facing forward with e
 - M toggles generated demo audio. T tests scenario-specific speech.
 - R restarts the selected scenario. Tab returns to scenario selection and resets the run.
 - Page Up/Down or the wheel scrolls the log. End returns to live events. Escape exits.
+- F9 switches between the cockpit and clean demo views. Use --demo-view to start in the clean view.
 - Use --no-camera or --camera 1 for camera alternatives. --scenario rain preselects rain. --config accepts another settings file.
 
 ## Configurable behaviour

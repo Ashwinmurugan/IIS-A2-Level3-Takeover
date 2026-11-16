@@ -261,12 +261,14 @@ def draw_calibration(surface, calibration, calibrate, skip):
 
 def draw_dashboard(surface, car, *, now, camera_view, monitoring, audio, history, scroll,
                    keys, flashes, started, change_button, scenario_buttons, start_button,
-                   calibration_dialog, calibrate_button, skip_button):
+                   calibration_dialog, calibrate_button, skip_button, demo_view=False):
     surface.fill(BACKGROUND)
     pygame.draw.line(surface, BORDER, (16, 84), (1424, 84))
     pygame.draw.rect(surface, TEAL, (23, 21, 4, 49), border_radius=2)
     label(surface, 'Level 3 Takeover Simulator', 40, 17, size=33, bold=True)
     label(surface, 'Desktop driving simulation   ·   F11 full screen', 41, 57, size=17, color=MUTED)
+    view_name = 'Clean demo view' if demo_view else 'Cockpit view'
+    label(surface, f'F9  ·  {view_name}', 886, 40, size=18, color=TEAL if demo_view else MUTED)
     if started:
         button(surface, change_button, 'Change scenario  /  Tab')
     for rect in ((16, 96, 304, 675), (326, 96, 764, 675), (1096, 96, 328, 675)):
@@ -275,7 +277,7 @@ def draw_dashboard(surface, car, *, now, camera_view, monitoring, audio, history
     label(surface, SCENARIO_LABELS[car.scenario].upper(), 340, 113, size=20, bold=True)
     location = car.location_label
     label(surface, location, 1078 - font(18).size(location)[0], 115, size=18, color=MUTED)
-    draw_road(surface, car, pygame.Rect(338, 241, 740, 321))
+    draw_road(surface, car, pygame.Rect(338, 241, 740, 321), demo_view=demo_view)
     draw_alert(surface, car, now)
     draw_instruments(surface, car, now, *audio)
     label(surface, 'EVENT LOG', 1110, 112, size=20, bold=True)

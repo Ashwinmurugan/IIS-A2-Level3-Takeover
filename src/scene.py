@@ -43,21 +43,24 @@ def mist(size, strength):
     return layer
 
 
-def draw_rain(canvas, viewport, intensity, elapsed):
+def draw_rain(canvas, viewport, intensity, elapsed, *, demo_view):
     width, height = viewport.size
     canvas.blit(mist(viewport.size,round(intensity*20)),viewport.topleft)
     rain = pygame.Surface(viewport.size, pygame.SRCALPHA)
     # Different speeds and lengths give the rain depth without covering the HUD.
-    for spacing, fall_speed, tilt, length, opacity, weight in (
+    layers = (
         (154, 320, 4, 13, 78, 1),
         (81, 650, 10, 32, 138, 2),
-    ):
+    )
+    if demo_view:
+        layers = ((44, 320, 4, 13, 92, 1),)
+    for spacing, fall_speed, tilt, length, opacity, weight in layers:
         for index in range(round(spacing*intensity)):
             x = (index*97.53 + elapsed*76) % (width+tilt)
             y = (index*52.27 + elapsed*fall_speed) % (height+length) - length
             pygame.draw.line(rain,(211,232,243,opacity),(x,y),(x-tilt,y+length),weight)
     # A few beads near the edges suggest a wet windshield without hiding the road.
-    for index in range(round(26*intensity)):
+    for index in range(0 if demo_view else round(26*intensity)):
         x = 16 + (index*41.7) % 172
         if index % 2:
             x = width-x
@@ -79,7 +82,7 @@ def draw_windshield_trim(canvas, viewport):
     pygame.draw.lines(canvas,'#687780',False,lip[:4],1)
 
 
-def draw_road(canvas, car, viewport):
+def draw_road(canvas, car, viewport, *, demo_view=False):
     previous_clip = canvas.get_clip()
     canvas.set_clip(viewport)
     horizon = viewport.top + 95
@@ -108,15 +111,19 @@ def draw_road(canvas, car, viewport):
         x, y = project(.5, exit_depth)
         pygame.draw.polygon(canvas, '#a2bcc3', arch(x, y, 10+exit_depth*265, 34+exit_depth*450))
     else:
-        canvas.blit(sky(viewport.size,round(rain_intensity*20)),viewport.topleft)
-        for index, color in enumerate(('#526675', '#3d555d')):
-            hills = [(viewport.left, horizon+30)]
-            for step in range(17):
-                x = viewport.left + step*viewport.width/16
-                height = math.sin(step*.93+index) * (19-index*5)
-                hills.append((x, horizon-(32-index*20)+height))
-            hills.append((viewport.right, horizon+30))
-            pygame.draw.polygon(canvas, color, hills)
+        if demo_view:
+            sky_color = pygame.Color('#769aaa').lerp(pygame.Color('#536672'), rain_intensity)
+            canvas.fill(sky_color, viewport)
+        else:
+            canvas.blit(sky(viewport.size,round(rain_intensity*20)),viewport.topleft)
+            for index, color in enumerate(('#526675', '#3d555d')):
+                hills = [(viewport.left, horizon+30)]
+                for step in range(17):
+                    x = viewport.left + step*viewport.width/16
+                    height = math.sin(step*.93+index) * (19-index*5)
+                    hills.append((x, horizon-(32-index*20)+height))
+                hills.append((viewport.right, horizon+30))
+                pygame.draw.polygon(canvas, color, hills)
         canvas.fill('#354d44', (viewport.left,horizon+5,viewport.width,ground-horizon))
         if tunnel and gap > 0:
             depth = 43/(43+gap)
@@ -130,7 +137,7 @@ def draw_road(canvas, car, viewport):
     band(-.67,1.67,'#596671' if inside else '#747b76')
     road_color = pygame.Color('#353f49').lerp(pygame.Color('#283641'), rain_intensity)
     band(-.5,1.5,road_color)
-    if storm:
+    if storm and not demo_view:
         for index in range(12):
             depth = ((index/12 + car.distance/91) % 1)**2
             lateral = -.4+(index*0.427) % 1.52
@@ -142,8 +149,9 @@ def draw_road(canvas, car, viewport):
         offset = (index/13 + car.distance/105) % 1
         band(.489,.511,'#e0e6e1',offset**2,min(1,offset+.032)**2)
 
-    for index in range(10):
-        depth = ((index/10 + car.distance/135) % 1)**2
+    markers = 5 if demo_view else 10
+    for index in range(markers):
+        depth = ((index/markers + car.distance/135) % 1)**2
         for side in (-.77, 1.77):
             x, y = project(side, depth)
             if inside:
@@ -172,8 +180,9 @@ def draw_road(canvas, car, viewport):
         triangle_x = x + width*.65
         pygame.draw.polygon(canvas, '#ffbc70', [(triangle_x,y-size*1.5),(triangle_x-size,y),(triangle_x+size,y)], 2)
     if storm:
-        draw_rain(canvas,viewport,rain_intensity,car.elapsed)
-    draw_windshield_trim(canvas,viewport)
+        draw_rain(canvas,viewport,rain_intensity,car.elapsed,demo_view=demo_view)
+    if not demo_view:
+        draw_windshield_trim(canvas,viewport)
     canvas.set_clip(previous_clip)
     pygame.draw.rect(canvas, '#354857', viewport, width=1)
 

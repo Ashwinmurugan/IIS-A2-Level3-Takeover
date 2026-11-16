@@ -148,6 +148,7 @@ def main():
     parser.add_argument('--audio-priority', '--spotify-priority', dest='spotify_priority', action='store_true', help='Lower Other audio audio during speech; restore afterwards')
     parser.add_argument('--smoke', action='store_true')
     parser.add_argument('--windowed', action='store_true')
+    parser.add_argument('--demo-view', action='store_true', help='Start with the simplified presentation view')
     parser.add_argument('--scenario', choices=['tunnel','obstacle','rain'], default='tunnel')
     parser.add_argument('--config', type=Path, default=DEFAULT_PATH)
     args = parser.parse_args()
@@ -163,6 +164,7 @@ def main():
         os.environ['SDL_AUDIODRIVER'] = 'dummy'
     pygame.init()
     fullscreen = not (args.windowed or args.smoke)
+    demo_view = args.demo_view
     screen = pygame.display.set_mode((0,0),pygame.FULLSCREEN) if fullscreen else pygame.display.set_mode((1440,850),pygame.RESIZABLE)
     pygame.display.set_caption('Level 3 Takeover Simulator')
     canvas = pygame.Surface(CANVAS_SIZE)
@@ -248,6 +250,9 @@ def main():
                 if event.type == pygame.MOUSEWHEEL:
                     log_scroll = max(0, log_scroll+event.y*3)
                 if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_F9:
+                        demo_view = not demo_view
+                        continue
                     if event.key == pygame.K_F11:
                         fullscreen = not fullscreen
                         screen = pygame.display.set_mode((0,0),pygame.FULLSCREEN) if fullscreen else pygame.display.set_mode((1440,850),pygame.RESIZABLE)
@@ -375,7 +380,7 @@ def main():
                 keys=keys, flashes=flashes, started=started, change_button=change_button,
                 scenario_buttons=scenario_buttons, start_button=start_button,
                 calibration_dialog=calibration_dialog, calibrate_button=calibrate_button,
-                skip_button=skip_button,
+                skip_button=skip_button, demo_view=demo_view,
             )
             viewport = fit_view(screen.get_size())
             screen.fill('#090f15')
