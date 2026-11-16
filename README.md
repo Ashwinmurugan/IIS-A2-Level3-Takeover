@@ -1,6 +1,6 @@
 # Level 3 Takeover Simulation
 
-README prose word count: 1471 (excluding commands and this line).
+README prose word count: 1581 (excluding commands and this line).
 
 ## Project status
 
@@ -95,3 +95,8 @@ Fallback speech now explains that takeover was not confirmed. Emergency braking 
 ### Head-direction action reminders
 
 I requested a clear instruction when looking left/right during a takeover request and an action reminder after returning forward. The attention speech now says “Please face the road ahead and take control.” After an attention prompt, a forward cue held for 0.8 seconds triggers one reminder, with at least two seconds since the attention speech. The obstruction reminder includes “Slow down”. Urgent escalation keeps priority and supplies its existing action instruction. Returning forward never transfers vehicle control. Unavailable tracking and eye closure do not qualify as forward. Live timing and wording await my review.
+
+
+### Scenario navigation and tracking-loss clarity
+
+I requested a discoverable return to scenario selection and questioned zero readings when tracking was lost. The driving screen now has a Change scenario button using the same reset path as Tab, including scaled-window click coordinates. Tracking is explicitly unavailable if frames become stale or orientation values are invalid. Missing observations clear yaw/pitch and eye scores rather than displaying zero. A valid zero-degree estimate still means forward orientation. Loss and recovery are recorded as head-cue state changes. Control mode and timed warnings continue independently. Automated checks cover stale, missing, invalid and valid zero observations. Live covering/uncovering of the camera remains part of my review.

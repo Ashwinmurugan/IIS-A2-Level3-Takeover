@@ -5,7 +5,7 @@ from driving import Driving
 from audio_priority import AudioPriority
 from scenarios import load_settings, DEFAULT_PATH
 from scene import draw_road, draw_log
-from monitoring import Monitor, pose_from_rotation
+from monitoring import Monitor, pose_from_rotation, valid_camera_sample
 from collections import deque
 import math
 import os
@@ -182,6 +182,7 @@ def main():
     calibration_note = 'Press C to set your forward position'
     flashes = {}
     start_button = pygame.Rect(520, 488, 360, 54)
+    change_button = pygame.Rect(1120, 24, 290, 48)
     baseline = None
     calibrating = False
     calibrated_at = 0.0
@@ -236,25 +237,25 @@ def main():
         while running:
             dt = min(clock.tick(60) / 1000, 0.1)
             now = time.monotonic()
-            frame, yaw, stamp, status = camera.read() if camera else (None, None, 0, 'Camera disabled')
-            fresh = now - stamp < 0.75
-            if not fresh:
-                yaw, frame = None, None
+            frame, yaw, stamp, status = valid_camera_sample(camera.read(), now) if camera else (None, None, 0, 'Camera disabled')
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
-                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and not started:
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     mx, my = event.pos
                     mapped = (mx*1440/screen.get_width(), my*850/screen.get_height())
-                    for index, button in enumerate(scenario_buttons):
-                        if button.collidepoint(mapped):
-                            selected_scenario = scenario_names[index]
-                            car = Driving(emit, selected_scenario, settings)
-                            emit('Scenario selected: '+selected_scenario)
-                            emit('Configuration: '+json.dumps(settings[selected_scenario]))
-                    if start_button.collidepoint(mapped):
-                        started = True
-                        emit('Drive started in right-hand lane')
+                    if started and change_button.collidepoint(mapped):
+                        pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
+                    elif not started:
+                        for index, button in enumerate(scenario_buttons):
+                            if button.collidepoint(mapped):
+                                selected_scenario = scenario_names[index]
+                                car = Driving(emit, selected_scenario, settings)
+                                emit('Scenario selected: '+selected_scenario)
+                                emit('Configuration: '+json.dumps(settings[selected_scenario]))
+                        if start_button.collidepoint(mapped):
+                            started = True
+                            emit('Drive started in selected lane')
                 if event.type == pygame.MOUSEWHEEL:
                     log_scroll = max(0, log_scroll+event.y*3)
                 if event.type == pygame.KEYDOWN:
@@ -370,7 +371,7 @@ def main():
             else:
                 pygame.draw.rect(canvas, '#263747', (32, 160, 274, 206))
                 wrap(status, 45, 230, 240)
-            text(state, 32, 390, AMBER if state != 'Facing forward' else TEAL)
+            text('Tracking unavailable' if state == 'Unavailable' else state, 32, 390, AMBER if state != 'Facing forward' else TEAL)
             text('Yaw / pitch: ' + ('--' if relative is None else f'{relative[0]:+.0f} / {relative[1]:+.0f}'), 32, 428)
             pygame.draw.rect(canvas,'#314553',(28,462,284,70),border_radius=8)
             eye_color = AMBER if eyes == 'Eyes appear closed' else TEAL if eyes == 'Open estimate' else WHITE
@@ -441,6 +442,9 @@ def main():
             audio_label = 'Speech prioritised' if speech and speech.busy.is_set() else 'M demo audio '+('paused' if music_enabled and audio_paused else 'playing' if music_enabled else 'off')
             spotify_label = ' | P Other audio '+('enabled' if speech and speech.spotify_enabled.is_set() else 'off')
             text(audio_label+spotify_label,370,739,MUTED,small)
+            if started:
+                pygame.draw.rect(canvas,TEAL,change_button,border_radius=8)
+                text('Change scenario  /  TAB',1132,35,BG,small)
             text('LIVE EVENT LOG', 1092, 118, TEAL)
             log_scroll = draw_log(canvas, history, log_font, log_scroll)
             controls = [('W','Speed +'),('S','Brake'),('A','Left'),('D','Right'),('Q','Signal'),('E','Signal'),('F','Auto'),('SPACE','Manual'),('R','Reset'),('C','Calibrate'),('M','Audio'),('T','Speech'),('ESC','Exit')]
@@ -467,7 +471,7 @@ def main():
             pygame.display.flip()
             frames += 1
             if args.smoke:
-                pygame.image.save(canvas,str(ROOT / f'evidence/phase6-{selected_scenario}-{frames}.png'))
+                pygame.image.save(canvas,str(ROOT / f'evidence/navigation-{selected_scenario}-{frames}.png'))
                 started = True
                 if frames == 1:
                     car.distance = car.boundary

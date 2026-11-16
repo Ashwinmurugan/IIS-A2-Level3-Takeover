@@ -8,6 +8,15 @@ def pose_from_rotation(rotation):
     return yaw, pitch
 
 
+def valid_camera_sample(sample, now):
+    frame, observation, stamp, status = sample
+    if now-stamp >= .75:
+        return None, None, stamp, 'Tracking unavailable - no fresh camera data'
+    if observation is not None and not all(math.isfinite(v) for v in observation[:2]):
+        return frame, None, stamp, 'Tracking unavailable - invalid estimate'
+    return frame, observation, stamp, status
+
+
 class Monitor:
     def __init__(self):
         self.closed_since = None
