@@ -1,5 +1,6 @@
 """Deterministic desktop simulation. All thresholds are experimental."""
 import math
+import time
 
 
 class Driving:
@@ -9,6 +10,12 @@ class Driving:
         self.position = 1.0
         self.distance = 0.0
         self.boundary = 500.0
+        self.tunnel_length = 200.0
+        self.exited = False
+        self.hazards = False
+        self.notice = ''
+        self.notice_until = 0.0
+        self.last_rejection = -100.0
         self.mode = 'Manual control'
         self.target = 1.0
         self.steer = 0.0
@@ -29,6 +36,10 @@ class Driving:
         if self.mode != 'Manual control':
             self.mode = 'Manual control'
             self.stage = 0
+            if self.hazards:
+                self.hazards = False
+                self.signal = 0
+                self.announce('Automatic hazard lights cleared by manual takeover')
             self.message = 'You are driving'
             self.announce('Space pressed: manual control; automatic braking cancelled', 'Manual control. You are driving.')
 
@@ -36,9 +47,24 @@ class Driving:
         if self.mode != 'Manual control':
             return
         remaining = self.boundary - self.distance
-        if self.speed < 1 or remaining / max(self.speed / 3.6, .1) <= 15:
-            self.announce('Automation unavailable: stopped or too near boundary')
+        if self.speed < 1:
+            reason = 'Automation unavailable while stopped.'
+        elif self.boundary <= self.distance < self.boundary+self.tunnel_length:
+            reason = 'Automation unavailable inside tunnel.'
+        elif remaining > 0 and remaining / max(self.speed / 3.6, .1) <= 15:
+            reason = 'Automation unavailable - tunnel ahead.'
+        else:
+            reason = ''
+        if reason:
+            now = time.monotonic()
+            self.notice = reason
+            self.notice_until = now + 5
+            spoken = reason+' Keep driving manually.' if now-self.last_rejection >= 4 else ''
+            if spoken:
+                self.last_rejection = now
+            self.announce('Automation request rejected: '+reason, spoken)
             return
+        self.notice = ''
         self.lane = 1 if self.position >= .5 else 0
         self.target = float(self.lane)
         self.mode = 'Automated driving'
@@ -48,6 +74,9 @@ class Driving:
         self.announce('F pressed: automation active; gradual lane centring', 'Automated driving active.')
 
     def indicate(self, direction):
+        if self.hazards:
+            self.announce('Direction signal ignored while automatic hazards are active')
+            return
         self.signal = 0 if self.signal == direction else direction
         self.announce({-1: 'Left indicator on', 1: 'Right indicator on', 0: 'Indicator cancelled'}[self.signal])
 
@@ -55,7 +84,7 @@ class Driving:
         old_speed = self.speed
         remaining = self.boundary - self.distance
         ttb = remaining / max(self.speed / 3.6, .1)
-        if self.mode == 'Automated driving':
+        if self.mode == 'Automated driving' and self.distance < self.boundary:
             if ttb <= 15 and self.stage == 0:
                 self.stage = 1
                 self.message = 'TAKE CONTROL - automation ends at tunnel'
@@ -72,6 +101,9 @@ class Driving:
             stopping_distance = (self.speed / 3.6) ** 2 / (2 * 2.5)
             if self.stage and (ttb <= 6 or remaining <= stopping_distance + 15):
                 self.mode = 'Automatic slowing'
+                self.hazards = True
+                self.signal = 0
+                self.announce('Automatic hazard lights active during fallback slowing')
                 self.stage = 3
                 self.message = 'Slowing automatically - SPACE to take control'
                 self.announce('Response deadline: simulated deceleration at 2.5 m/s squared', 'Slowing automatically. Take control when ready.')
@@ -113,6 +145,9 @@ class Driving:
         if self.distance >= self.boundary and not self.crossed:
             self.crossed = True
             self.announce('Tunnel boundary crossed in ' + self.mode)
+        if self.distance >= self.boundary+self.tunnel_length and not self.exited:
+            self.exited = True
+            self.announce('Tunnel passed')
 
 
 def verify():
@@ -153,7 +188,34 @@ def verify():
             for _ in range(fps * 120):
                 sample.update(1/fps, 0, 0, 'Facing forward')
             assert sample.mode == 'Stopped' and sample.distance < sample.boundary
+    verify_phase4()
     print('PASS: gradual centring, missing-camera fallback, stop before boundary, takeover continuity, attention prompt')
+
+
+def verify_phase4():
+    records = []
+    car = Driving(lambda *entry: records.append(entry))
+    car.distance = 400
+    for _ in range(5):
+        car.automate()
+    assert car.mode == 'Manual control' and car.notice
+    assert sum(bool(entry[1]) for entry in records) == 1
+    car = Driving(lambda *entry: None)
+    car.automate()
+    for _ in range(5000):
+        car.update(.02,0,0,'Unavailable')
+    assert car.hazards and car.mode == 'Stopped'
+    car.manual()
+    assert not car.hazards
+    car.distance = 600
+    car.speed = 45
+    car.automate()
+    assert car.mode == 'Manual control' and 'inside' in car.notice
+    car.distance = 701
+    car.automate()
+    car.update(.02,0,0,'Facing forward')
+    assert car.mode == 'Automated driving' and not car.stage
+    print('PASS: denial banner and speech cooldown, hazards, inside/past tunnel behaviour')
 
 
 if __name__ == '__main__':

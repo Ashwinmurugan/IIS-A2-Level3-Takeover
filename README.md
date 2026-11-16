@@ -1,6 +1,6 @@
 # Level 3 Takeover Simulation
 
-README prose word count: 1194 (excluding commands and this line).
+README prose word count: 1493 (excluding commands and this line).
 
 ## Project status
 
@@ -84,3 +84,15 @@ The start screen explains calibration. Normal fonts increased by three points. A
 Synthetic checks passed for left/right/up/down classification, brief versus sustained closure, tracking-loss reset and lane centring from four positions. Previous braking and takeover checks still pass. Setup and alert states rendered successfully and were visually inspected. Generated smoke screenshots illustrate layouts using injected states, rather than recording a real driver trial. The latest camera check is in evidence/feasibility-check.json. Full live review of this iteration is pending.
 
 Run src/monitoring.py for the new cue tests. Enter starts the drive; all previous driving controls remain available.
+
+### 16 November 2026 — Tunnel progression and emergency feedback
+
+My Phase 3 review found that the tunnel stayed visible after its distance reached zero, warning symbols were too weak and the observer log was difficult to read. I requested synchronized hazard indicators during fallback and immediate visible or spoken feedback when automation was unavailable. I approved this scope before implementation.
+
+The road now draws the tunnel entrance from distance, shows a moving interior over a simulated 200-metre length, and returns to open road after the exit. Labels change from metres to tunnel, to Inside tunnel, to Tunnel passed. For this simplified scenario, automation becomes available again after the exit. The geometry remains a schematic perspective rendering.
+
+Fallback activates both amber indicators together and keeps them active while stopped. Manual takeover or reset clears the automatic hazards. This is a prototype rule. A solid warning triangle accompanies active warning messages. Automation rejection shows a five-second dashboard banner and speaks the reason, with a four-second speech cooldown for repeated requests. Every rejected request remains logged. Control remains manual when an activation request is rejected from manual driving.
+
+The observer log now uses bold 22-point text, category labels and higher contrast. The latest event is visible automatically. Mouse wheel, Page Up and Page Down inspect previous lines; End returns to live events. Ctrl+C is handled as a clean shutdown, with camera release and event saving.
+
+Checks passed for rejected-request feedback, repeated-request speech suppression, fallback hazards, cancellation on takeover, and automation behaviour inside and after the tunnel. Prior monitoring, braking and lane-keeping checks also passed. Six synthetic rendering states were inspected for setup, approach, interior, exit, rejection and hazards. These injected screenshots demonstrate layout rather than an actual continuous drive. Live speech audibility, movement feel and scrolling still need my hands-on review.

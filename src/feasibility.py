@@ -2,6 +2,7 @@
 import argparse
 import json
 from driving import Driving
+from scene import draw_road, draw_log
 from monitoring import Monitor, pose_from_rotation
 from collections import deque
 import math
@@ -141,7 +142,9 @@ def main():
     events = queue.Queue()
     speech = None if args.smoke else Speech(events)
     camera = None if args.smoke or args.no_camera else Camera(args.camera)
-    history = deque(maxlen=10)
+    history = deque(maxlen=500)
+    log_scroll = 0
+    log_font = pygame.font.SysFont('Segoe UI', 22, bold=True)
     samples = deque()
     monitor = Monitor()
     started = False
@@ -214,7 +217,15 @@ def main():
                     if start_button.collidepoint(mapped):
                         started = True
                         emit('Drive started in right-hand lane')
+                if event.type == pygame.MOUSEWHEEL:
+                    log_scroll = max(0, log_scroll+event.y*3)
                 if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_PAGEUP:
+                        log_scroll += 12
+                    elif event.key == pygame.K_PAGEDOWN:
+                        log_scroll = max(0,log_scroll-12)
+                    elif event.key == pygame.K_END:
+                        log_scroll = 0
                     flashes[event.key] = now + .3
                     if event.key == pygame.K_RETURN and not started:
                         started = True
@@ -293,7 +304,7 @@ def main():
 
             canvas.fill(BG)
             text('LEVEL 3 / TAKEOVER INTERFACE', 24, 18, face=heading)
-            text('Phase 3  /  Driver cues and clear control feedback', 24, 55, MUTED)
+            text('Phase 4  /  Tunnel progression and emergency feedback', 24, 55, MUTED)
             for rect in [(16, 100, 306, 670), (336, 100, 724, 670), (1074, 100, 350, 670)]:
                 pygame.draw.rect(canvas, PANEL, rect, border_radius=12)
             text('DRIVER MONITORING', 32, 118, TEAL)
@@ -311,34 +322,27 @@ def main():
             wrap(calibration_note, 32, 540, 265, TEAL)
             wrap('C sets your forward reference for head turns. Eye closure is an estimate, not a sleep diagnosis. Camera frames stay local.', 32, 620, 265)
             text('TUNNEL APPROACH', 354, 118, TEAL)
-            text(f'{max(0,car.boundary-distance):.0f} m to boundary', 780, 118, MUTED)
-            pygame.draw.rect(canvas, '#647b89', (354, 160, 688, 330))
-            pygame.draw.polygon(canvas, '#344e45', [(354, 260), (1042, 260), (1042, 490), (354, 490)])
-            canvas.set_clip(pygame.Rect(354, 228, 688, 262))
-            center = 698 + (.5-position) * 300
-            pygame.draw.polygon(canvas, '#333b46', [(678, 260), (718, 260), (center + 300, 490), (center - 300, 490)])
-            for i in range(12):
-                depth = ((i / 12 + distance / 150) % 1) ** 2
-                y = 260 + depth * 230
-                x = 698 + (center - 698) * depth
-                pygame.draw.line(canvas, '#f0ede0', (x, y), (x, y + 5 + depth * 12), max(1, int(depth * 5)))
-            canvas.set_clip(None)
-            active_alert = car.stage > 0
+            location = f'{car.boundary-distance:.0f} m to tunnel' if distance < car.boundary else 'Inside tunnel' if distance < car.boundary+car.tunnel_length else 'Tunnel passed'
+            text(location,780,118,MUTED)
+            draw_road(canvas, car)
+            denied = now < car.notice_until and bool(car.notice)
+            active_alert = car.stage > 0 or denied
             alert_color = '#ef5959' if car.stage >= 2 else AMBER
             pygame.draw.rect(canvas, '#38212a' if active_alert else '#18212b', (354, 160, 688, 78))
             pygame.draw.rect(canvas, alert_color if active_alert else '#3b5266', (354, 160, 688, 78), 3)
             if active_alert:
-                pygame.draw.polygon(canvas, alert_color, [(382,174),(362,214),(402,214)], 3)
-                text('!', 378, 186, alert_color)
+                pygame.draw.polygon(canvas, alert_color, [(385,168),(359,224),(411,224)])
+                text('!',377,181,BG,alert_font)
             title = {1:'TAKE CONTROL', 2:'TAKE CONTROL NOW', 3:'SLOWING AUTOMATICALLY'}.get(car.stage, car.mode)
             if car.mode == 'Stopped':
                 title = 'VEHICLE STOPPED'
-            text(title, 416, 164, alert_color if active_alert else WHITE, alert_font)
+            if denied:
+                title = 'AUTOMATION UNAVAILABLE'
+            text(title, 424, 164, alert_color if active_alert else WHITE, alert_font)
             detail = 'Automation ends at tunnel - press SPACE' if car.stage in (1,2) else 'SPACE to take manual control' if car.stage else car.message
-            text(detail, 416, 207, WHITE, small)
-            tunnel_size = int(15 + 5 * max(0, min(1, 1-(car.boundary-distance)/500)))
-            pygame.draw.rect(canvas, '#19242b', (698-tunnel_size, 260-tunnel_size, tunnel_size*2, tunnel_size))
-            pygame.draw.arc(canvas, '#8394a0', (698-tunnel_size, 260-tunnel_size, tunnel_size*2, tunnel_size*2), 0, math.pi, 5)
+            if denied:
+                detail = car.notice.replace('Automation unavailable', 'Manual control')
+            text(detail, 424, 207, WHITE, small)
             text(f'{speed:05.1f} km/h', 380, 520, face=heading)
             text(car.mode, 680, 526, TEAL)
             text(f'Travelled {distance:.0f} m', 380, 568, MUTED)
@@ -349,18 +353,15 @@ def main():
             dx, dy = math.cos(angle) * 39, math.sin(angle) * 39
             pygame.draw.line(canvas, WHITE, (690-dx, 650-dy), (690+dx, 650+dy), 5)
             for direction, cx in [(-1, 550), (1, 830)]:
-                lit = car.signal == direction and int(now*2)%2 == 0
+                lit = (car.hazards or car.signal == direction) and int(now*2)%2 == 0
                 arrow = [(-30,0),(-7,-22),(-7,-10),(27,-10),(27,10),(-7,10),(-7,22)]
                 pygame.draw.polygon(canvas, AMBER if lit else '#344556', [(cx-x*direction,650+y) for x,y in arrow])
+            if car.hazards:
+                text('HAZARD LIGHTS ACTIVE', 550, 602, AMBER, small)
             text('Simulated seat / wheel vibration: ' + ('ON' if car.stage >= 2 else 'OFF'), 370, 704, AMBER)
             text('M demo audio: ' + ('paused for alert' if music_enabled and audio_paused else 'playing' if music_enabled else 'off'), 370, 735, MUTED)
             text('LIVE EVENT LOG', 1092, 118, TEAL)
-            y = 165
-            for elapsed, message in list(history)[-6:]:
-                text(f'{elapsed:06.1f}s', 1092, y, TEAL, small)
-                y = wrap(message, 1092, y + 21, 308) + 5
-                if y > 704:
-                    break
+            log_scroll = draw_log(canvas, history, log_font, log_scroll)
             controls = [('W','Speed +'),('S','Brake'),('A','Left'),('D','Right'),('Q','Signal'),('E','Signal'),('F','Auto'),('SPACE','Manual'),('R','Reset'),('C','Calibrate'),('M','Audio'),('T','Speech'),('ESC','Exit')]
             keycodes = [pygame.K_w,pygame.K_s,pygame.K_a,pygame.K_d,pygame.K_q,pygame.K_e,pygame.K_f,pygame.K_SPACE,pygame.K_r,pygame.K_c,pygame.K_m,pygame.K_t,pygame.K_ESCAPE]
             for i, ((label, action), code) in enumerate(zip(controls, keycodes)):
@@ -382,17 +383,22 @@ def main():
             pygame.display.flip()
             frames += 1
             if args.smoke:
-                pygame.image.save(canvas, str(ROOT / f'evidence/phase3-state-{frames}.png'))
+                pygame.image.save(canvas, str(ROOT / f'evidence/phase4-state-{frames}.png'))
                 started = True
-                car.stage = min(frames, 3)
-                car.mode = 'Automated driving'
-                if frames == 3:
-                    car.mode = 'Stopped'
-                    car.speed = 0
-            if args.smoke and frames == 4:
-                pygame.image.save(canvas, str(ROOT / 'evidence/phase3-smoke.png'))
-                print('PASS: application rendered setup and three alert states without camera or speech')
-                running = False
+                car.distance = [0,450,550,710,400,430][min(frames,5)]
+                if frames == 4:
+                    car.manual()
+                    car.automate()
+                if frames == 5:
+                    car.notice = ''
+                    car.stage = 3
+                    car.mode = 'Automatic slowing'
+                    car.hazards = True
+                if frames == 6:
+                    print('PASS: setup, tunnel approach/interior/exit, denial and hazards rendered')
+                    running = False
+    except KeyboardInterrupt:
+        emit('Session interrupted from terminal; clean shutdown')
     finally:
         if camera:
             camera.close()
