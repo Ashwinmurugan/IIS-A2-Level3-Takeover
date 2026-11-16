@@ -21,6 +21,9 @@ class Driving:
         self.hazards = self.prompted = self.crossed = self.exited = False
         self.centred = True
         self.away = self.lane_settle = 0.0
+        self.forward_time = 0.0
+        self.return_pending = False
+        self.last_attention_speech = -100.0
         self.notice = ''
         self.notice_until = 0.0
         self.last_rejection = -100.0
@@ -107,6 +110,9 @@ class Driving:
         self.target, self.mode = float(self.lane),'Automated driving'
         self.centred = False
         self.stage, self.away, self.prompted = 0,0.0,False
+        self.forward_time = 0.0
+        self.return_pending = False
+        self.last_attention_speech = -100.0
         self.request_at = None
         self.message = 'Centring in current lane'
         self.announce('F pressed: automation active; gradual lane centring','Automated driving active.')
@@ -197,12 +203,23 @@ class Driving:
             self.away = self.away+dt if head in ('Turned away','Looking left','Looking right','Looking up','Looking down','Eyes appear closed') else 0
             if self.away >= r['attention_seconds'] and not self.prompted:
                 self.prompted = True
-                self.announce('Attention prompt after sustained cue: '+head,'Please face the road and take control.')
+                self.return_pending = True
+                self.last_attention_speech = self.elapsed
+                self.announce('Attention prompt after sustained cue: '+head,'Please face the road ahead and take control.')
             age = self.elapsed-self.request_at
             urgent = ttb <= r['urgent_seconds'] if self.scenario == 'tunnel' else age >= r['request_seconds']-r['urgent_seconds']
             if urgent and self.stage == 1:
                 self.stage = 2
                 self.announce('Urgent warning: takeover still unconfirmed','Take control now.')
+            self.forward_time = self.forward_time+dt if head == 'Facing forward' else 0.0
+            if self.return_pending and self.forward_time >= .8 and self.elapsed-self.last_attention_speech >= 2:
+                self.return_pending = False
+                # An urgent transition already supplies the action reminder this frame.
+                if not urgent:
+                    action = 'Slow down and take control.' if self.scenario == 'obstacle' else 'Take control.'
+                    self.announce('Forward head cue stable; takeover still unconfirmed', action)
+                else:
+                    self.announce('Forward head cue stable; urgent takeover remains active')
             stopping = (self.speed/3.6)**2/(2*r['deceleration'])
             fallback = age >= r['request_seconds']-r['fallback_seconds']
             if self.scenario == 'tunnel':

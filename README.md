@@ -1,6 +1,6 @@
 # Level 3 Takeover Simulation
 
-README prose word count: 1373 (excluding commands and this line).
+README prose word count: 1471 (excluding commands and this line).
 
 ## Project status
 
@@ -90,3 +90,8 @@ Pycaw provides session access (https://github.com/AndreMiras/pycaw). Fake-sessio
 I approved extending audio priority beyond Spotify and explaining why the car stops. P now enables lowering process-owned audio sessions on the default Windows output, excluding the prototype process. The --audio-priority option enables it at launch; the former option remains an alias. Session names and restoration outcomes are logged. System sounds and sessions without an identifiable process are skipped. Other outputs and exclusive audio paths are unverified. The earlier Spotify-only description records the previous iteration.
 
 Fallback speech now explains that takeover was not confirmed. Emergency braking explains the obstruction. The dashboard retains the cause while stopped. Looking away remains an attention cue rather than the stopping cause. Fake-session tests cover protecting the prototype audio, reduction, repeated calls and restoration. Live cross-application audio testing remains pending.
+
+
+### Head-direction action reminders
+
+I requested a clear instruction when looking left/right during a takeover request and an action reminder after returning forward. The attention speech now says “Please face the road ahead and take control.” After an attention prompt, a forward cue held for 0.8 seconds triggers one reminder, with at least two seconds since the attention speech. The obstruction reminder includes “Slow down”. Urgent escalation keeps priority and supplies its existing action instruction. Returning forward never transfers vehicle control. Unavailable tracking and eye closure do not qualify as forward. Live timing and wording await my review.
