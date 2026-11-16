@@ -1,0 +1,14 @@
+{
+  "camera_frames_observed": 201,
+  "face_estimates_observed": 201,
+  "statuses": [
+    "Face tracked"
+  ],
+  "video_saved": false,
+  "remaining_checks": [
+    "user calibration",
+    "head-turn classification",
+    "audible speech",
+    "interactive WASD controls"
+  ]
+}
