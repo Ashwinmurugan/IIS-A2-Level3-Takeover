@@ -1,6 +1,6 @@
 # Level 3 Takeover Simulation
 
-README prose word count: 868 (excluding commands and this line).
+README prose word count: 1194 (excluding commands and this line).
 
 ## Project status
 
@@ -70,3 +70,17 @@ The checks in src/driving.py passed for gradual centring, missing-camera fallbac
 Speech uses Windows SAPI asynchronously so new control messages can replace obsolete speech. M enables a locally generated tone as demonstration media. Warning activity and speech pause it. Saved run events contain timestamps and decisions, without webcam frames, and are excluded from Git until selected for evidence. Live calibration, spoken transitions, audio interruption and steering feel await my Phase 2 review.
 
 Run src/driving.py to repeat the behavioural checks. The initial head-angle threshold and all driving logic remain simplified. Automatic lane changes and real traffic perception are future work.
+
+### 16 November 2026 — Monitoring and feedback refinement
+
+After testing Phase 2, I confirmed that the functionality worked and requested vertical head cues, possible eye monitoring, stronger alerts, larger fonts, realistic indicator arrows and visible key feedback. I approved keeping automation within the current lane.
+
+Phase 3 adds a one-time Start drive screen, beginning in the right-hand lane of a two-lane same-direction simulated road. Enter or the start button begins movement. Calibration remains available before and after starting. Reset restarts the scenario without reopening setup. Automation identifies the current lane and smoothly centres within it, with an overshoot guard.
+
+Head monitoring now uses calibrated yaw and pitch. Experimental thresholds are 25 degrees horizontally and 18 degrees vertically. MediaPipe eye-blink blendshape scores supply an apparent closure cue when both scores reach 0.65 for at least 1.5 seconds. A brief blink does not qualify. Missing face data resets closure timing. Sustained closure and non-forward orientation can trigger an attention prompt after two seconds during a takeover request. These are unvalidated prototype settings. Live direction labels and eye estimation require my camera review, including looking down and wearing glasses if relevant. The interface does not label the driver asleep.
+
+The start screen explains calibration. Normal fonts increased by three points. Alerts use bold 32-point text, a warning triangle, contrasting background and persistent action/reason text. Amber arrows blink for direction signals. The keyboard strip highlights held keys and briefly highlights discrete presses. Dashboard mode feedback remains visible.
+
+Synthetic checks passed for left/right/up/down classification, brief versus sustained closure, tracking-loss reset and lane centring from four positions. Previous braking and takeover checks still pass. Setup and alert states rendered successfully and were visually inspected. Generated smoke screenshots illustrate layouts using injected states, rather than recording a real driver trial. The latest camera check is in evidence/feasibility-check.json. Full live review of this iteration is pending.
+
+Run src/monitoring.py for the new cue tests. Enter starts the drive; all previous driving controls remain available.

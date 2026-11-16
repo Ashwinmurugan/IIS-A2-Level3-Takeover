@@ -1,6 +1,6 @@
 {
-  "camera_frames_observed": 201,
-  "face_estimates_observed": 201,
+  "camera_frames_observed": 195,
+  "face_estimates_observed": 195,
   "statuses": [
     "Face tracked"
   ],

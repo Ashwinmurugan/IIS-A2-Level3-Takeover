@@ -6,14 +6,14 @@ class Driving:
     def __init__(self, emit):
         self.emit = emit
         self.speed = 45.0
-        self.position = 0.0
+        self.position = 1.0
         self.distance = 0.0
         self.boundary = 500.0
         self.mode = 'Manual control'
-        self.target = 0.0
+        self.target = 1.0
         self.steer = 0.0
         self.signal = 0
-        self.lane = 0
+        self.lane = 1
         self.stage = 0
         self.away = 0.0
         self.prompted = False
@@ -39,6 +39,7 @@ class Driving:
         if self.speed < 1 or remaining / max(self.speed / 3.6, .1) <= 15:
             self.announce('Automation unavailable: stopped or too near boundary')
             return
+        self.lane = 1 if self.position >= .5 else 0
         self.target = float(self.lane)
         self.mode = 'Automated driving'
         self.centred = False
@@ -60,10 +61,10 @@ class Driving:
                 self.message = 'TAKE CONTROL - automation ends at tunnel'
                 self.announce(f'Tunnel from scenario data: {remaining:.0f}m / {ttb:.1f}s; takeover requested', 'Take control. Automated driving ends at the tunnel.')
             if self.stage:
-                self.away = self.away + dt if head == 'Turned away' else 0.0
+                self.away = self.away + dt if head in ('Turned away', 'Looking left', 'Looking right', 'Looking up', 'Looking down', 'Eyes appear closed') else 0.0
                 if self.away >= 2 and not self.prompted:
                     self.prompted = True
-                    self.announce('Attention prompt: head turned away for 2 seconds after request', 'Please face the road and take control.')
+                    self.announce('Attention prompt after sustained cue: ' + head, 'Please face the road and take control.')
             if ttb <= 10 and self.stage == 1:
                 self.stage = 2
                 self.message = 'TAKE CONTROL NOW'
@@ -85,8 +86,12 @@ class Driving:
                     self.mode = 'Stopped'
                     self.message = 'Stopped - SPACE for manual control'
                     self.announce('Simulated vehicle stopped', 'Vehicle stopped.')
+        previous_position = self.position
         self.steer += (desired - self.steer) * (1 - math.exp(-8 * dt))
         self.position = max(-.45, min(1.45, self.position + self.steer * self.speed / 100 * dt))
+        if self.mode != 'Manual control' and (self.target-previous_position)*(self.target-self.position) <= 0:
+            self.position = self.target
+            self.steer = 0.0
         self.distance += (old_speed + self.speed) / 7.2 * dt
         new_lane = 1 if self.position >= .5 else 0
         if new_lane != self.lane:
@@ -133,6 +138,13 @@ def verify():
     car.manual()
     car.update(.02, 0, 0, 'Turned away')
     assert car.mode == 'Manual control' and car.stage == 0
+    for initial in (.15, .35, .65, 1.3):
+        sample = Driving(lambda *entry: None)
+        sample.position = initial
+        sample.automate()
+        for _ in range(1000):
+            sample.update(.01,0,0,'Facing forward')
+        assert abs(sample.position - sample.target) < .03
     for fps in (30, 60, 120):
         for speed in (20, 45, 100):
             sample = Driving(lambda *entry: None)

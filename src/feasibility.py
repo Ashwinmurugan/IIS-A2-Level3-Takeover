@@ -2,6 +2,7 @@
 import argparse
 import json
 from driving import Driving
+from monitoring import Monitor, pose_from_rotation
 from collections import deque
 import math
 import os
@@ -42,7 +43,7 @@ class Camera:
             options = mp.tasks.vision.FaceLandmarkerOptions(
                 base_options=mp.tasks.BaseOptions(model_asset_path=str(ROOT / 'models/face_landmarker.task')),
                 running_mode=mp.tasks.vision.RunningMode.VIDEO,
-                num_faces=1, output_facial_transformation_matrixes=True)
+                num_faces=1, output_facial_transformation_matrixes=True, output_face_blendshapes=True)
             with mp.tasks.vision.FaceLandmarker.create_from_options(options) as model:
                 capture = cv2.VideoCapture(self.index, cv2.CAP_DSHOW)
                 capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -62,7 +63,10 @@ class Camera:
                     yaw = None
                     if len(result.facial_transformation_matrixes):
                         rotation = result.facial_transformation_matrixes[0][:3, :3]
-                        yaw = math.degrees(math.atan2(rotation[0, 2], rotation[2, 2]))
+                        angles = pose_from_rotation(rotation)
+                        scores = {item.category_name: item.score for item in result.face_blendshapes[0]} if result.face_blendshapes else {}
+                        blink = min(scores.get('eyeBlinkLeft', float('nan')), scores.get('eyeBlinkRight', float('nan')))
+                        yaw = (*angles, blink)
                     self.publish(rgb, yaw, 'Face tracked' if yaw is not None else 'Face unavailable')
         except Exception as error:
             self.publish(None, None, str(error))
@@ -130,14 +134,20 @@ def main():
     screen = pygame.display.set_mode((1440, 850), pygame.RESIZABLE)
     pygame.display.set_caption('IIS A2 - Integrated tunnel simulation')
     canvas = pygame.Surface((1440, 850))
-    font = pygame.font.SysFont('Segoe UI', 20)
-    small = pygame.font.SysFont('Segoe UI', 17)
+    font = pygame.font.SysFont('Segoe UI', 23)
+    small = pygame.font.SysFont('Segoe UI', 20)
     heading = pygame.font.SysFont('Segoe UI', 28, bold=True)
+    alert_font = pygame.font.SysFont('Segoe UI', 32, bold=True)
     events = queue.Queue()
     speech = None if args.smoke else Speech(events)
     camera = None if args.smoke or args.no_camera else Camera(args.camera)
     history = deque(maxlen=10)
     samples = deque()
+    monitor = Monitor()
+    started = False
+    calibration_note = 'Press C to set your forward position'
+    flashes = {}
+    start_button = pygame.Rect(520, 450, 360, 65)
     baseline = None
     calibrating = False
     calibrated_at = 0.0
@@ -146,6 +156,7 @@ def main():
     clock = pygame.time.Clock()
     start = time.monotonic()
     previous_state = ''
+    previous_eyes = ''
     state_since = start
     last_sample = 0.0
     running, frames = True, 0
@@ -162,12 +173,12 @@ def main():
             candidate = (line + ' ' + word).strip()
             if small.size(candidate)[0] > width and line:
                 text(line, x, y, color, small)
-                y += 22
+                y += 25
                 line = word
             else:
                 line = candidate
         text(line, x, y, color, small)
-        return y + 26
+        return y + 29
 
     records = []
     def emit(message, spoken=''):
@@ -197,14 +208,27 @@ def main():
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and not started:
+                    mx, my = event.pos
+                    mapped = (mx*1440/screen.get_width(), my*850/screen.get_height())
+                    if start_button.collidepoint(mapped):
+                        started = True
+                        emit('Drive started in right-hand lane')
                 if event.type == pygame.KEYDOWN:
+                    flashes[event.key] = now + .3
+                    if event.key == pygame.K_RETURN and not started:
+                        started = True
+                        emit('Drive started in right-hand lane')
+                    if not started and event.key not in (pygame.K_c, pygame.K_ESCAPE, pygame.K_RETURN):
+                        continue
                     if event.key == pygame.K_ESCAPE:
                         running = False
                     elif event.key == pygame.K_c:
                         samples.clear()
                         calibrating, calibrated_at = True, now
                         baseline = None
-                        log('Calibration requested; face forward')
+                        calibration_note = 'Hold still with eyes open for two seconds'
+                        emit('Calibration requested; face forward with eyes open')
                     elif event.key == pygame.K_t and speech:
                         speech.say()
                     elif event.key == pygame.K_SPACE:
@@ -229,19 +253,22 @@ def main():
                         emit('Demo audio ' + ('enabled' if music_enabled else 'disabled'))
             if calibrating:
                 if yaw is not None and stamp != last_sample:
-                    samples.append(yaw)
+                    samples.append(yaw[:2])
                     last_sample = stamp
                 if now - calibrated_at >= 2:
                     calibrating = False
-                    if len(samples) >= 12 and np.std(samples) < 5:
-                        baseline = float(np.median(samples))
-                        log('Forward position calibrated')
+                    if len(samples) >= 12 and max(np.std(samples, axis=0)) < 5:
+                        baseline = tuple(np.median(samples, axis=0))
+                        calibration_note = 'Forward position set'
+                        emit(calibration_note)
                     else:
-                        log('Calibration failed; hold still and retry C')
-            relative = None if yaw is None or baseline is None else (yaw - baseline + 180) % 360 - 180
-            state = 'Unavailable' if yaw is None else 'Needs calibration'
-            if relative is not None:
-                state = 'Turned away' if abs(relative) > 25 else 'Facing forward'
+                        calibration_note = 'Calibration failed. Hold still and retry C.'
+                        emit(calibration_note)
+            state, eyes, relative = monitor.classify(yaw, baseline, now)
+            if eyes != previous_eyes:
+                if eyes == 'Eyes appear closed' or previous_eyes == 'Eyes appear closed':
+                    emit('Eye cue: ' + eyes)
+                previous_eyes = eyes
             if state != previous_state:
                 previous_state, state_since = state, now
                 emit('Head cue: ' + state)
@@ -251,7 +278,8 @@ def main():
             manual = car.mode == 'Manual control'
             throttle = int(keys[pygame.K_w]) - int(keys[pygame.K_s])
             steering_input = int(keys[pygame.K_d]) - int(keys[pygame.K_a])
-            car.update(dt, throttle, steering_input, state)
+            if started:
+                car.update(dt, throttle, steering_input, 'Eyes appear closed' if eyes == 'Eyes appear closed' else state)
             speed, position, distance, steer = car.speed, car.position, car.distance, car.steer
             pause_audio = bool(car.stage or (speech and speech.busy.is_set()))
             if music_enabled and music:
@@ -265,7 +293,7 @@ def main():
 
             canvas.fill(BG)
             text('LEVEL 3 / TAKEOVER INTERFACE', 24, 18, face=heading)
-            text('Phase 2  /  Integrated tunnel takeover simulation', 24, 55, MUTED)
+            text('Phase 3  /  Driver cues and clear control feedback', 24, 55, MUTED)
             for rect in [(16, 100, 306, 670), (336, 100, 724, 670), (1074, 100, 350, 670)]:
                 pygame.draw.rect(canvas, PANEL, rect, border_radius=12)
             text('DRIVER MONITORING', 32, 118, TEAL)
@@ -277,10 +305,11 @@ def main():
                 pygame.draw.rect(canvas, '#263747', (32, 160, 274, 206))
                 wrap(status, 45, 230, 240)
             text(state, 32, 390, AMBER if state != 'Facing forward' else TEAL)
-            text('Relative yaw: ' + ('--' if relative is None else f'{relative:+.1f} degrees'), 32, 430)
-            text(f'Current cue: {now - state_since:.1f}s', 32, 464, MUTED)
-            wrap('Calibrating: hold forward...' if calibrating else 'C  Set your forward-facing position', 32, 515, 270)
-            wrap('Calibration learns your forward position so head turns can be estimated. Face the road view and hold still for two seconds. Frames stay local.', 32, 595, 265)
+            text('Yaw / pitch: ' + ('--' if relative is None else f'{relative[0]:+.0f} / {relative[1]:+.0f}'), 32, 428)
+            text(eyes, 32, 463, AMBER if eyes == 'Eyes appear closed' else MUTED)
+            text(f'Head cue: {now - state_since:.1f}s', 32, 500, MUTED)
+            wrap(calibration_note, 32, 540, 265, TEAL)
+            wrap('C sets your forward reference for head turns. Eye closure is an estimate, not a sleep diagnosis. Camera frames stay local.', 32, 620, 265)
             text('TUNNEL APPROACH', 354, 118, TEAL)
             text(f'{max(0,car.boundary-distance):.0f} m to boundary', 780, 118, MUTED)
             pygame.draw.rect(canvas, '#647b89', (354, 160, 688, 330))
@@ -294,23 +323,36 @@ def main():
                 x = 698 + (center - 698) * depth
                 pygame.draw.line(canvas, '#f0ede0', (x, y), (x, y + 5 + depth * 12), max(1, int(depth * 5)))
             canvas.set_clip(None)
-            pygame.draw.rect(canvas, '#18212b', (354, 162, 688, 65))
-            wrap(car.message, 369, 174, 660, '#ff7777' if car.stage >= 2 else AMBER)
-            tunnel_size = int(20 + 12 * max(0, min(1, 1-(car.boundary-distance)/500)))
+            active_alert = car.stage > 0
+            alert_color = '#ef5959' if car.stage >= 2 else AMBER
+            pygame.draw.rect(canvas, '#38212a' if active_alert else '#18212b', (354, 160, 688, 78))
+            pygame.draw.rect(canvas, alert_color if active_alert else '#3b5266', (354, 160, 688, 78), 3)
+            if active_alert:
+                pygame.draw.polygon(canvas, alert_color, [(382,174),(362,214),(402,214)], 3)
+                text('!', 378, 186, alert_color)
+            title = {1:'TAKE CONTROL', 2:'TAKE CONTROL NOW', 3:'SLOWING AUTOMATICALLY'}.get(car.stage, car.mode)
+            if car.mode == 'Stopped':
+                title = 'VEHICLE STOPPED'
+            text(title, 416, 164, alert_color if active_alert else WHITE, alert_font)
+            detail = 'Automation ends at tunnel - press SPACE' if car.stage in (1,2) else 'SPACE to take manual control' if car.stage else car.message
+            text(detail, 416, 207, WHITE, small)
+            tunnel_size = int(15 + 5 * max(0, min(1, 1-(car.boundary-distance)/500)))
             pygame.draw.rect(canvas, '#19242b', (698-tunnel_size, 260-tunnel_size, tunnel_size*2, tunnel_size))
             pygame.draw.arc(canvas, '#8394a0', (698-tunnel_size, 260-tunnel_size, tunnel_size*2, tunnel_size*2), 0, math.pi, 5)
             text(f'{speed:05.1f} km/h', 380, 520, face=heading)
             text(car.mode, 680, 526, TEAL)
-            text(f'Distance travelled  {distance:.0f} m', 380, 568, MUTED)
+            text(f'Travelled {distance:.0f} m', 380, 568, MUTED)
             text(f'Lane {car.lane+1}  |  offset {position-car.lane:+.2f}', 680, 568, MUTED)
             wheel = (690, 650)
             pygame.draw.circle(canvas, '#91a3b2', wheel, 45, 5)
             angle = steer * .65
             dx, dy = math.cos(angle) * 39, math.sin(angle) * 39
             pygame.draw.line(canvas, WHITE, (690-dx, 650-dy), (690+dx, 650+dy), 5)
-            if car.signal and int(now*2)%2 == 0:
-                text('< LEFT' if car.signal < 0 else 'RIGHT >', 540 if car.signal < 0 else 790, 640, TEAL)
-            text('Seat / wheel vibration (simulated): ' + ('ON' if car.stage >= 2 else 'OFF'), 370, 704, AMBER)
+            for direction, cx in [(-1, 550), (1, 830)]:
+                lit = car.signal == direction and int(now*2)%2 == 0
+                arrow = [(-30,0),(-7,-22),(-7,-10),(27,-10),(27,10),(-7,10),(-7,22)]
+                pygame.draw.polygon(canvas, AMBER if lit else '#344556', [(cx-x*direction,650+y) for x,y in arrow])
+            text('Simulated seat / wheel vibration: ' + ('ON' if car.stage >= 2 else 'OFF'), 370, 704, AMBER)
             text('M demo audio: ' + ('paused for alert' if music_enabled and audio_paused else 'playing' if music_enabled else 'off'), 370, 735, MUTED)
             text('LIVE EVENT LOG', 1092, 118, TEAL)
             y = 165
@@ -319,14 +361,37 @@ def main():
                 y = wrap(message, 1092, y + 21, 308) + 5
                 if y > 704:
                     break
-            text('W/S speed  A/D steer  Q/E indicators  SPACE manual  F automate  R reset  C calibrate  M audio  T speech  ESC exit', 24, 793)
-            text('Experimental simulation. Camera cues do not prove readiness. Boundary data is scripted; vehicle behaviour is simplified.', 24, 823, MUTED, small)
+            controls = [('W','Speed +'),('S','Brake'),('A','Left'),('D','Right'),('Q','Signal'),('E','Signal'),('F','Auto'),('SPACE','Manual'),('R','Reset'),('C','Calibrate'),('M','Audio'),('T','Speech'),('ESC','Exit')]
+            keycodes = [pygame.K_w,pygame.K_s,pygame.K_a,pygame.K_d,pygame.K_q,pygame.K_e,pygame.K_f,pygame.K_SPACE,pygame.K_r,pygame.K_c,pygame.K_m,pygame.K_t,pygame.K_ESCAPE]
+            for i, ((label, action), code) in enumerate(zip(controls, keycodes)):
+                x = 18+i*109
+                pressed = keys[code] or flashes.get(code,0)>now
+                pygame.draw.rect(canvas, TEAL if pressed else '#263747', (x,780,102,36), border_radius=6)
+                text(label,x+10,784,BG if pressed else WHITE,small)
+                text(action,x+5,818,MUTED,small)
+            if not started:
+                pygame.draw.rect(canvas, '#101e2b', (354,245,688,320), border_radius=12)
+                text('Prepare your drive', 400,270, WHITE, heading)
+                text('1. Face the screen and press C to calibrate.',400,320)
+                text('2. Start in the right-hand lane of this two-lane road.',380,362, MUTED, small)
+                text('WASD drives. F follows your current lane.',400,402)
+                pygame.draw.rect(canvas, TEAL, start_button, border_radius=10)
+                text('Start drive  /  ENTER',558,467,BG,heading)
+                text('Camera unavailable? You can still start and test driving.',380,534,MUTED,small)
             screen.blit(pygame.transform.smoothscale(canvas, screen.get_size()), (0, 0))
             pygame.display.flip()
             frames += 1
-            if args.smoke and frames == 3:
-                pygame.image.save(canvas, str(ROOT / 'evidence/phase2-smoke.png'))
-                print('PASS: application rendered 3 frames without camera or speech')
+            if args.smoke:
+                pygame.image.save(canvas, str(ROOT / f'evidence/phase3-state-{frames}.png'))
+                started = True
+                car.stage = min(frames, 3)
+                car.mode = 'Automated driving'
+                if frames == 3:
+                    car.mode = 'Stopped'
+                    car.speed = 0
+            if args.smoke and frames == 4:
+                pygame.image.save(canvas, str(ROOT / 'evidence/phase3-smoke.png'))
+                print('PASS: application rendered setup and three alert states without camera or speech')
                 running = False
     finally:
         if camera:
