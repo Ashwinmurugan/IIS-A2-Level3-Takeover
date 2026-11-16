@@ -2,6 +2,7 @@
 import argparse
 import json
 from driving import Driving
+from scenarios import load_settings, DEFAULT_PATH
 from scene import draw_road, draw_log
 from monitoring import Monitor, pose_from_rotation
 from collections import deque
@@ -127,7 +128,17 @@ def main():
     parser.add_argument('--camera', type=int, default=0)
     parser.add_argument('--no-camera', action='store_true')
     parser.add_argument('--smoke', action='store_true')
+    parser.add_argument('--scenario', choices=['tunnel','obstacle','rain'], default='tunnel')
+    parser.add_argument('--config', type=Path, default=DEFAULT_PATH)
     args = parser.parse_args()
+    try:
+        settings = load_settings(args.config)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        parser.error('Invalid scenario configuration: '+str(error))
+    selected_scenario = args.scenario
+    scenario_names = ['tunnel','obstacle','rain']
+    scenario_labels = ['1 Tunnel','2 Stopped vehicle','3 Heavy rain']
+    scenario_buttons = [pygame.Rect(370+i*220,300,210,48) for i in range(3)]
     if args.smoke:
         os.environ['SDL_VIDEODRIVER'] = 'dummy'
         os.environ['SDL_AUDIODRIVER'] = 'dummy'
@@ -150,7 +161,7 @@ def main():
     started = False
     calibration_note = 'Press C to set your forward position'
     flashes = {}
-    start_button = pygame.Rect(520, 450, 360, 65)
+    start_button = pygame.Rect(520, 488, 360, 54)
     baseline = None
     calibrating = False
     calibrated_at = 0.0
@@ -189,7 +200,7 @@ def main():
         records.append({'seconds': round(time.monotonic()-start, 3), 'event': message})
         if spoken and speech:
             speech.say(spoken)
-    car = Driving(emit)
+    car = Driving(emit, selected_scenario, settings)
     music = None
     music_enabled = False
     if pygame.mixer.get_init():
@@ -199,7 +210,8 @@ def main():
         music = pygame.sndarray.make_sound(np.column_stack((wave, wave)).astype(np.int16))
         channel = pygame.mixer.Channel(0)
     audio_paused = False
-    emit('Tunnel scenario ready; experimental thresholds')
+    emit('Scenario selected: '+selected_scenario+'; experimental thresholds')
+    emit('Configuration: '+json.dumps(settings[selected_scenario]))
     try:
         while running:
             dt = min(clock.tick(60) / 1000, 0.1)
@@ -214,6 +226,12 @@ def main():
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and not started:
                     mx, my = event.pos
                     mapped = (mx*1440/screen.get_width(), my*850/screen.get_height())
+                    for index, button in enumerate(scenario_buttons):
+                        if button.collidepoint(mapped):
+                            selected_scenario = scenario_names[index]
+                            car = Driving(emit, selected_scenario, settings)
+                            emit('Scenario selected: '+selected_scenario)
+                            emit('Configuration: '+json.dumps(settings[selected_scenario]))
                     if start_button.collidepoint(mapped):
                         started = True
                         emit('Drive started in right-hand lane')
@@ -227,6 +245,11 @@ def main():
                     elif event.key == pygame.K_END:
                         log_scroll = 0
                     flashes[event.key] = now + .3
+                    if not started and event.key in (pygame.K_1,pygame.K_2,pygame.K_3):
+                        selected_scenario = scenario_names[event.key-pygame.K_1]
+                        car = Driving(emit, selected_scenario, settings)
+                        emit('Scenario selected: '+selected_scenario)
+                        emit('Configuration: '+json.dumps(settings[selected_scenario]))
                     if event.key == pygame.K_RETURN and not started:
                         started = True
                         emit('Drive started in right-hand lane')
@@ -241,13 +264,19 @@ def main():
                         calibration_note = 'Hold still with eyes open for two seconds'
                         emit('Calibration requested; face forward with eyes open')
                     elif event.key == pygame.K_t and speech:
-                        speech.say()
+                        speech.say('Take control. '+{'tunnel':'Automation ends at tunnel.','obstacle':'Stopped vehicle ahead.','rain':'Visibility is below the operating limit.'}[selected_scenario])
                     elif event.key == pygame.K_SPACE:
                         car.manual()
                     elif event.key == pygame.K_f:
                         car.automate()
+                    elif event.key == pygame.K_TAB:
+                        started = False
+                        car = Driving(emit, selected_scenario, settings)
+                        if speech:
+                            speech.say('Choose a scenario.')
+                        emit('Returned to scenario selection; run reset')
                     elif event.key == pygame.K_r:
-                        car = Driving(emit)
+                        car = Driving(emit, selected_scenario, settings)
                         if speech:
                             speech.say('Scenario reset. Manual control.')
                         emit('Scenario reset')
@@ -304,7 +333,7 @@ def main():
 
             canvas.fill(BG)
             text('LEVEL 3 / TAKEOVER INTERFACE', 24, 18, face=heading)
-            text('Phase 4  /  Tunnel progression and emergency feedback', 24, 55, MUTED)
+            text('Phase 5  /  Context-aware scenarios  |  TAB selects scenario', 24, 55, MUTED)
             for rect in [(16, 100, 306, 670), (336, 100, 724, 670), (1074, 100, 350, 670)]:
                 pygame.draw.rect(canvas, PANEL, rect, border_radius=12)
             text('DRIVER MONITORING', 32, 118, TEAL)
@@ -321,11 +350,11 @@ def main():
             text(f'Head cue: {now - state_since:.1f}s', 32, 500, MUTED)
             wrap(calibration_note, 32, 540, 265, TEAL)
             wrap('C sets your forward reference for head turns. Eye closure is an estimate, not a sleep diagnosis. Camera frames stay local.', 32, 620, 265)
-            text('TUNNEL APPROACH', 354, 118, TEAL)
-            location = f'{car.boundary-distance:.0f} m to tunnel' if distance < car.boundary else 'Inside tunnel' if distance < car.boundary+car.tunnel_length else 'Tunnel passed'
-            text(location,780,118,MUTED)
+            text({'tunnel':'TUNNEL','obstacle':'STOPPED VEHICLE','rain':'HEAVY RAIN'}[selected_scenario], 354, 118, TEAL)
+            text(car.location_label,780,118,MUTED)
             draw_road(canvas, car)
-            denied = now < car.notice_until and bool(car.notice)
+            notice_active = now < car.notice_until and bool(car.notice)
+            denied = notice_active and 'unavailable' in car.notice.lower()
             active_alert = car.stage > 0 or denied
             alert_color = '#ef5959' if car.stage >= 2 else AMBER
             pygame.draw.rect(canvas, '#38212a' if active_alert else '#18212b', (354, 160, 688, 78))
@@ -333,16 +362,21 @@ def main():
             if active_alert:
                 pygame.draw.polygon(canvas, alert_color, [(385,168),(359,224),(411,224)])
                 text('!',377,181,BG,alert_font)
-            title = {1:'TAKE CONTROL', 2:'TAKE CONTROL NOW', 3:'SLOWING AUTOMATICALLY'}.get(car.stage, car.mode)
+            title = {1:'TAKE CONTROL', 2:'TAKE CONTROL NOW', 3:'SLOWING AUTOMATICALLY',4:'EMERGENCY BRAKING'}.get(car.stage, car.mode)
+            if car.collision:
+                title = 'COLLISION RECORDED'
             if car.mode == 'Stopped':
                 title = 'VEHICLE STOPPED'
             if denied:
                 title = 'AUTOMATION UNAVAILABLE'
             text(title, 424, 164, alert_color if active_alert else WHITE, alert_font)
-            detail = 'Automation ends at tunnel - press SPACE' if car.stage in (1,2) else 'SPACE to take manual control' if car.stage else car.message
-            if denied:
-                detail = car.notice.replace('Automation unavailable', 'Manual control')
-            text(detail, 424, 207, WHITE, small)
+            detail = car.reason+' Press SPACE.' if car.stage in (1,2) else 'Braking active - preparing to stop' if car.stage == 4 else 'SPACE to take manual control' if car.stage else car.message
+            if notice_active and not car.stage:
+                detail = car.notice
+            if car.collision:
+                detail = 'Stopping margin insufficient. R restarts scenario.'
+            detail_font = small if small.size(detail)[0] <= 605 else pygame.font.SysFont('Segoe UI',17)
+            text(detail, 424, 207, WHITE, detail_font)
             text(f'{speed:05.1f} km/h', 380, 520, face=heading)
             text(car.mode, 680, 526, TEAL)
             text(f'Travelled {distance:.0f} m', 380, 568, MUTED)
@@ -372,30 +406,32 @@ def main():
                 text(action,x+5,818,MUTED,small)
             if not started:
                 pygame.draw.rect(canvas, '#101e2b', (354,245,688,320), border_radius=12)
-                text('Prepare your drive', 400,270, WHITE, heading)
-                text('1. Face the screen and press C to calibrate.',400,320)
-                text('2. Start in the right-hand lane of this two-lane road.',380,362, MUTED, small)
-                text('WASD drives. F follows your current lane.',400,402)
-                pygame.draw.rect(canvas, TEAL, start_button, border_radius=10)
-                text('Start drive  /  ENTER',558,467,BG,heading)
-                text('Camera unavailable? You can still start and test driving.',380,534,MUTED,small)
+                text('Choose your scenario',400,258,WHITE,heading)
+                for index, button in enumerate(scenario_buttons):
+                    chosen = selected_scenario == scenario_names[index]
+                    pygame.draw.rect(canvas,TEAL if chosen else '#314758',button,border_radius=8)
+                    text(scenario_labels[index],button.x+10,button.y+12,BG if chosen else WHITE,small)
+                text('C calibrates your forward position. Hold still.',380,365)
+                text(f'Start {car.speed:.0f} km/h  |  lane {car.lane+1}  |  event at {car.boundary:.0f} m',380,405,MUTED,small)
+                text('Parameters are editable in scenarios.json. TAB returns here.',380,445,MUTED,small)
+                pygame.draw.rect(canvas,TEAL,start_button,border_radius=10)
+                text('Start drive / ENTER',558,497,BG,heading)
             screen.blit(pygame.transform.smoothscale(canvas, screen.get_size()), (0, 0))
             pygame.display.flip()
             frames += 1
             if args.smoke:
-                pygame.image.save(canvas, str(ROOT / f'evidence/phase4-state-{frames}.png'))
+                pygame.image.save(canvas,str(ROOT / f'evidence/phase5-{selected_scenario}-{frames}.png'))
                 started = True
-                car.distance = [0,450,550,710,400,430][min(frames,5)]
-                if frames == 4:
-                    car.manual()
-                    car.automate()
-                if frames == 5:
-                    car.notice = ''
-                    car.stage = 3
-                    car.mode = 'Automatic slowing'
-                    car.hazards = True
-                if frames == 6:
-                    print('PASS: setup, tunnel approach/interior/exit, denial and hazards rendered')
+                if frames == 1:
+                    car.distance = car.boundary
+                    if selected_scenario == 'rain':
+                        car.rain_started = car.elapsed-9
+                        car.event_started = True
+                if frames == 2:
+                    car.mode = 'Automated driving'
+                    car.request('Visibility is below the operating limit.' if selected_scenario == 'rain' else 'Stopped vehicle ahead.' if selected_scenario == 'obstacle' else 'Automation ends at tunnel.')
+                if frames == 3:
+                    print('PASS: scenario selection, scene and contextual alert rendered')
                     running = False
     except KeyboardInterrupt:
         emit('Session interrupted from terminal; clean shutdown')

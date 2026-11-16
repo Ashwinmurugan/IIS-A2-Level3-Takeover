@@ -1,16 +1,16 @@
 # Level 3 Takeover Simulation
 
-README prose word count: 1493 (excluding commands and this line).
+README prose word count: 979 (excluding commands and this line).
 
 ## Project status
 
-I am developing this project for Intelligent Interactive Systems Assignment 2 at the University of Birmingham, following my A1 review of speech and multimodal takeover warnings.
+I am developing this project for Intelligent Interactive Systems Assignment 2 at the University of Birmingham, following my A1 review of speech and multimodal takeover warnings. The desktop prototype combines webcam head and eye cues, keyboard driving, contextual warnings and an observer log.
 
-Iteration 1 is a feasibility prototype with three panels, webcam head-direction estimation, calibration, a keyboard-controlled practice road, sample speech and an event log. Phase 2 now adds gradual lane centring, manual lane changes and indicators, a tunnel warning sequence, head-turn prompts, escalation, simulated deceleration, demo audio priority and simulated vibration status. Vehicle movement is simplified. Other road scenarios remain planned.
+Implemented scenarios are a tunnel boundary, a stationary vehicle appearing ahead, and rain with simulated visibility loss. Lane following, manual takeover, warning escalation, fallback braking, hazard indicators and demo audio priority are implemented. Road sensing and vehicle dynamics are simulated. Vibration is represented visually. Camera tracking uses Google's pretrained model. Roadworks, real haptic hardware, external music services and real vehicle integration remain planned extensions.
 
-## Technology and setup
+## Setup and running
 
-Python 3.12, Pygame, OpenCV through opencv-contrib-python, MediaPipe and Windows SAPI through pywin32 are used. pyttsx3 remains installed from the feasibility iteration. Exact package versions are in requirements.txt. The current local environment uses the desktop application's bundled Python. Other reviewers should install Python 3.12 and create their own environment on Windows.
+Use Windows and Python 3.12. Pygame draws the interface, OpenCV captures frames, MediaPipe estimates facial features and Windows SAPI through pywin32 speaks messages. Exact package versions are in requirements.txt. pyttsx3 remains installed from the first iteration. My current local environment uses the desktop application's bundled Python. Reviewers should create their own environment.
 
 ```powershell
 py -3.12 -m venv .venv
@@ -20,79 +20,56 @@ Invoke-WebRequest 'https://storage.googleapis.com/mediapipe-models/face_landmark
 .\.venv\Scripts\python.exe src/feasibility.py
 ```
 
-The model is downloaded from Google's official MediaPipe distribution. The download is excluded from Git. Windows camera permission and an available webcam are needed. Camera frames are processed locally and never recorded by this application.
+Choose a scenario with the buttons or 1/2/3. Press C while facing forward with eyes open for two seconds, then Enter to start. Calibration estimates a forward reference. Camera frames stay local and are not recorded. Camera failure leaves timed warnings available.
 
-## Controls and checks
+- W/S accelerate and brake. A/D steer. Q/E toggle direction indicators.
+- F requests automated lane following. Space requests manual control.
+- During emergency braking, Space queues manual control until stopping. Ordinary and fallback takeovers remain immediate. Emergency braking can also activate in manual mode if a detected same-lane obstruction becomes imminent. This is a specific simulation design choice.
+- M toggles generated demo audio. T tests scenario-specific speech.
+- R restarts the selected scenario. Tab returns to scenario selection and resets the run.
+- Page Up/Down or the wheel scrolls the log. End returns to live events. Escape exits.
+- Use --no-camera or --camera 1 for camera alternatives. --scenario rain preselects rain. --config accepts another settings file.
 
-- C calibrates while I face the screen and hold still for two seconds.
-- W/S change speed and A/D steer in manual mode.
-- F selects simulated lane following. Space selects manual control.
-- T plays a sample takeover message. Q/E toggle indicators. M toggles generated demo audio. R resets the tunnel scenario. Escape exits.
-- Add --no-camera to run without the webcam, or --camera 1 to try another device.
-- Run check_feasibility.py for driving calculations and a brief local camera check.
-- Run src/feasibility.py --smoke for an automatic rendering check without camera or speech.
+## Configurable behaviour
 
-The estimated yaw threshold of 25 degrees and calibration settings are initial experimental choices. They need user testing. Head direction does not establish concentration or readiness. Missing or stale estimates produce an unavailable state.
+Edit scenarios.json before launch. Each scenario has a starting speed, lane and event distance. Lane 0 is left and lane 1 is right on the same-direction two-lane road. Defaults use 45 km/h and lane 1.
 
-## Development record
+The tunnel begins at 500 metres and is 200 metres long. Exit produces an availability announcement without engaging automation. The obstacle appears when our car reaches 100 metres, at road position 400 metres, and becomes detectable within 350 metres. Thus the initial gap is 300 metres. Adjacent-lane obstacles do not trigger a takeover request. Emergency braking uses gap, speed and estimated stopping distance. An unavoidable collision produces an explicit stopped collision outcome.
 
-### 16 November 2026 — Design and feasibility
+Rain starts at 500 metres and evolves over 35 seconds even while stopped. Intensity drives the rain drawing and simulated visibility. Automation reduces speed towards 30 km/h in rain and requests takeover below the configured visibility limit. Recovery must persist for three seconds. An existing takeover request remains active until takeover or fallback, even if visibility improves.
 
-I chose a three-panel layout to demonstrate the interface alongside camera observations and rule decisions. I agreed to check camera, keyboard and speech behaviour before adding the complete tunnel interaction. The code was prepared with Codex assistance after I approved that scope.
+Rules include warning times, braking rates, margins and attention-prompt duration. The default tunnel warning thresholds are 15, 10 and 6 seconds. Other scenarios use elapsed response time after detection. Emergency braking uses 7 m/s² and fallback uses 2.5 m/s². These are experimental settings, not validated driving or regulatory requirements. Physical grip, traffic gaps and real road perception are outside this model.
 
-Automatic checks passed for rendering, speed limits, stationary steering and constant-speed movement across different time steps. The camera check result is saved in evidence/feasibility-check.json. Calibration accuracy, head turns, audible speech and the feel of driving still require my interactive review.
+Head thresholds are 25 degrees yaw and 18 degrees pitch. Both eye-blink scores must reach 0.65 for 1.5 seconds before apparent sustained closure is shown. Missing tracking resets the closure timer. Orientation and eye closure cannot establish concentration, readiness or sleep.
 
-The environment initially included two OpenCV distributions sharing the same module. These were replaced with the contrib distribution required by MediaPipe. The event log displays actual observed changes. Webcam images are excluded from saved evidence.
+## Checks and evidence
+
+```powershell
+.\.venv\Scripts\python.exe test_scenarios.py
+.\.venv\Scripts\python.exe src/monitoring.py
+.\.venv\Scripts\python.exe check_feasibility.py
+.\.venv\Scripts\python.exe src/feasibility.py --smoke --scenario rain
+```
+
+Scenario tests cover tunnel stops across three speeds and frame rates, exit announcements, lane centring, obstacle appearance and lane relevance, emergency braking, queued takeover, impossible stopping distance, rain fallback and recovery. Monitoring tests use synthetic inputs. The webcam check processes live frames without saving images. Smoke screenshots use injected states for layout inspection. Phase 5 live speech, timing and driving feel still require my interactive review. Saved run events contain timestamps and rule decisions, and are excluded from Git until selected for evidence.
+
+## Development record — 16 November 2026
+
+- I proposed three panels and approved camera, keyboard and speech feasibility. Checks passed and I confirmed the controls worked. Commit f2b21b0.
+- I requested integrated tunnel warnings, gradual centring, spoken control changes and indicators. These were implemented and checked. Commit bc78ead.
+- I requested up/down cues, possible eye monitoring, stronger alerts and visible keys. Tests covered closure timing and tracking loss. Commit 47c6025.
+- My review found a stationary tunnel, weak symbols, small logs and hidden automation rejections. The next version added progression, hazards, bold scrolling logs, rejection speech and clean interruption handling. Commit 121ebd2.
+- I requested selectable dynamic scenarios and contextual explanations. Phase 5 moved parameters into a validated configuration, added stationary-obstacle and rain state, and separated emergency mitigation from takeover timing. Tests exposed the need to distinguish sufficient stopping margin from unavoidable collision, and emergency lane holding was checked during review. Results are in evidence/phase5-checks.json.
 
 ## AI assistance and sources
 
-I used ChatGPT/Codex to discuss requirements, refine the interface, generate a concept image and implement this first feasibility version. I proposed live head monitoring, three panels and the observer log. I accepted explicit takeover confirmation and keyboard steering. I will record changes from my hands-on review in the next iteration.
+I used ChatGPT/Codex for requirements discussion, a concept image, implementation and test assistance. I supplied the layout and feature requests, approved each phase and reported live behaviour. Codex generated code and performed automated and visual checks. My feedback led to changes in lane movement, warnings, logging and scenario design. The face model is pretrained by Google and has not been trained on my data.
 
-The face model is pretrained by Google. The application uses MediaPipe's documented Face Landmarker API and its face transformation output. The model has not been trained on my data.
-
-- MediaPipe documentation: https://developers.google.com/edge/mediapipe/solutions/vision/face_landmarker
+- MediaPipe Face Landmarker documentation: https://developers.google.com/edge/mediapipe/solutions/vision/face_landmarker
 - Pygame documentation: https://www.pygame.org/docs/
-- Speech library: https://pypi.org/project/pyttsx3/
+- NHTSA automation overview: https://www.nhtsa.gov/vehicle-safety/automated-vehicle-safety
 
 ## Files and submission
 
-src contains code, report is reserved for the report and diagrams, and evidence holds checks and screenshots. The report will link the public GitHub repository, README and submitted commit. Publishing details remain to be agreed. A ZIP is only needed for material that cannot reasonably go in the repository.
+src contains code, report is reserved for the report and diagrams, and evidence contains checks and screenshots. The report will identify the submitted commit and link the public repository and README. Publishing remains to be agreed. An accompanying ZIP is only needed for material unsuitable for the repository.
 
-
-### 16 November 2026 — Integrated tunnel interaction
-
-After trying the first build, I confirmed that the camera and keyboard commands worked. I asked for gradual centring, spoken control changes, lane indicators and integrated warnings before visual refinement. Codex implemented these changes following my approval.
-
-The tunnel is placed 500 metres along the simulated road. Initial and urgent requests use experimental 15-second and 10-second time-to-boundary thresholds. A sustained two-second head turn after a request can trigger an attention prompt. Missing tracking does not suppress timed escalation. Simulated braking begins at six seconds remaining or when the calculated stopping distance plus a 15-metre margin requires it. Deceleration is 2.5 metres per second squared. These choices are prototype parameters, not validated driving recommendations.
-
-The checks in src/driving.py passed for gradual centring, missing-camera fallback, stopping before the boundary, takeover continuity and attention prompting. Braking was checked at 20, 45 and 100 km/h with 30, 60 and 120 updates per second. The rendering check passed. A test initially allowed too little time after warning onset for the attention prompt; its duration was corrected. A road drawing overflow was also corrected.
-
-Speech uses Windows SAPI asynchronously so new control messages can replace obsolete speech. M enables a locally generated tone as demonstration media. Warning activity and speech pause it. Saved run events contain timestamps and decisions, without webcam frames, and are excluded from Git until selected for evidence. Live calibration, spoken transitions, audio interruption and steering feel await my Phase 2 review.
-
-Run src/driving.py to repeat the behavioural checks. The initial head-angle threshold and all driving logic remain simplified. Automatic lane changes and real traffic perception are future work.
-
-### 16 November 2026 — Monitoring and feedback refinement
-
-After testing Phase 2, I confirmed that the functionality worked and requested vertical head cues, possible eye monitoring, stronger alerts, larger fonts, realistic indicator arrows and visible key feedback. I approved keeping automation within the current lane.
-
-Phase 3 adds a one-time Start drive screen, beginning in the right-hand lane of a two-lane same-direction simulated road. Enter or the start button begins movement. Calibration remains available before and after starting. Reset restarts the scenario without reopening setup. Automation identifies the current lane and smoothly centres within it, with an overshoot guard.
-
-Head monitoring now uses calibrated yaw and pitch. Experimental thresholds are 25 degrees horizontally and 18 degrees vertically. MediaPipe eye-blink blendshape scores supply an apparent closure cue when both scores reach 0.65 for at least 1.5 seconds. A brief blink does not qualify. Missing face data resets closure timing. Sustained closure and non-forward orientation can trigger an attention prompt after two seconds during a takeover request. These are unvalidated prototype settings. Live direction labels and eye estimation require my camera review, including looking down and wearing glasses if relevant. The interface does not label the driver asleep.
-
-The start screen explains calibration. Normal fonts increased by three points. Alerts use bold 32-point text, a warning triangle, contrasting background and persistent action/reason text. Amber arrows blink for direction signals. The keyboard strip highlights held keys and briefly highlights discrete presses. Dashboard mode feedback remains visible.
-
-Synthetic checks passed for left/right/up/down classification, brief versus sustained closure, tracking-loss reset and lane centring from four positions. Previous braking and takeover checks still pass. Setup and alert states rendered successfully and were visually inspected. Generated smoke screenshots illustrate layouts using injected states, rather than recording a real driver trial. The latest camera check is in evidence/feasibility-check.json. Full live review of this iteration is pending.
-
-Run src/monitoring.py for the new cue tests. Enter starts the drive; all previous driving controls remain available.
-
-### 16 November 2026 — Tunnel progression and emergency feedback
-
-My Phase 3 review found that the tunnel stayed visible after its distance reached zero, warning symbols were too weak and the observer log was difficult to read. I requested synchronized hazard indicators during fallback and immediate visible or spoken feedback when automation was unavailable. I approved this scope before implementation.
-
-The road now draws the tunnel entrance from distance, shows a moving interior over a simulated 200-metre length, and returns to open road after the exit. Labels change from metres to tunnel, to Inside tunnel, to Tunnel passed. For this simplified scenario, automation becomes available again after the exit. The geometry remains a schematic perspective rendering.
-
-Fallback activates both amber indicators together and keeps them active while stopped. Manual takeover or reset clears the automatic hazards. This is a prototype rule. A solid warning triangle accompanies active warning messages. Automation rejection shows a five-second dashboard banner and speaks the reason, with a four-second speech cooldown for repeated requests. Every rejected request remains logged. Control remains manual when an activation request is rejected from manual driving.
-
-The observer log now uses bold 22-point text, category labels and higher contrast. The latest event is visible automatically. Mouse wheel, Page Up and Page Down inspect previous lines; End returns to live events. Ctrl+C is handled as a clean shutdown, with camera release and event saving.
-
-Checks passed for rejected-request feedback, repeated-request speech suppression, fallback hazards, cancellation on takeover, and automation behaviour inside and after the tunnel. Prior monitoring, braking and lane-keeping checks also passed. Six synthetic rendering states were inspected for setup, approach, interior, exit, rejection and hazards. These injected screenshots demonstrate layout rather than an actual continuous drive. Live speech audibility, movement feel and scrolling still need my hands-on review.

@@ -1,0 +1,11 @@
+[
+  "Tunnel stops before boundary at 3 speeds and 3 update rates",
+  "Tunnel exit announced once without automatic engagement",
+  "Current lane centring remains smooth from both lanes",
+  "Obstacle appears dynamically and default no-response run stops safely in simulation",
+  "Adjacent lane obstacle does not request takeover",
+  "Emergency braking starts immediately and queued takeover completes after stopping",
+  "Impossible stopping distance produces an explicit collision outcome",
+  "Rain triggers reduction, takeover, fallback and stable visibility recovery while stopped",
+  "Rain blocks automation and permits explicit re-engagement after recovery"
+]

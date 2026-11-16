@@ -6,11 +6,11 @@ def draw_road(canvas, car):
     viewport = pygame.Rect(354, 238, 688, 252)
     canvas.set_clip(viewport)
     remaining = car.boundary - car.distance
-    inside = 0 <= car.distance-car.boundary < car.tunnel_length
+    inside = car.scenario == 'tunnel' and 0 <= car.distance-car.boundary < car.tunnel_length
     canvas.fill('#202630' if inside else '#718896', viewport)
     centre = 698 + (.5-car.position)*300
     pygame.draw.polygon(canvas, '#344e45' if not inside else '#292e36', [(354,280),(1042,280),(1042,490),(354,490)])
-    if remaining > 0:
+    if car.scenario == 'tunnel' and remaining > 0:
         scale = 75/(remaining+75)
         width = 35 + 800*scale
         bottom = 280 + 230*scale
@@ -34,6 +34,23 @@ def draw_road(canvas, car):
         to_exit = car.boundary+car.tunnel_length-car.distance
         width = 20+500*60/(to_exit+60)
         pygame.draw.rect(canvas, '#c4dbe5', (698-width,245,width*2,35))
+    if car.scenario == 'obstacle' and car.event_started and car.gap > -5:
+        depth = 40/(max(0,car.gap)+40)
+        x = 698+(car.config['obstacle_lane']-car.position)*300*depth
+        y = 280+depth*210
+        width = 20+depth*110
+        pygame.draw.rect(canvas,'#aa3b42',(x-width/2,y-width*.6,width,width*.6),border_radius=5)
+        pygame.draw.rect(canvas,'#91b3c3',(x-width*.32,y-width*.55,width*.64,width*.2))
+        for side in (-1,1):
+            pygame.draw.circle(canvas,'#ffb04f',(int(x+side*width*.35),int(y-width*.14)),max(2,int(width*.055)))
+    if car.scenario == 'rain' and car.rain_intensity > 0:
+        fog = pygame.Surface(viewport.size,pygame.SRCALPHA)
+        fog.fill((130,150,170,int(car.rain_intensity*110)))
+        canvas.blit(fog,viewport.topleft)
+        for i in range(int(140*car.rain_intensity)):
+            x = 354+(i*73+car.elapsed*70)%688
+            y = 238+(i*47+car.elapsed*420)%252
+            pygame.draw.line(canvas,'#b8d5e6',(x,y),(x-8,y+20),2)
     canvas.set_clip(None)
 
 
@@ -42,7 +59,7 @@ def log_rows(history, font):
     for elapsed, message in history:
         lower = message.lower()
         category, color = 'OBSERVATION', '#d4e1ec'
-        if any(word in lower for word in ('warning','unavailable','deadline','attention','hazard','rejected')):
+        if any(word in lower for word in ('warning','unavailable','deadline','attention','hazard','rejected','takeover requested','collision','emergency')):
             category, color = 'ALERT', '#ffc369'
         elif any(word in lower for word in ('control','automation active','lane','drive started')):
             category, color = 'CONTROL', '#51dbc4'
