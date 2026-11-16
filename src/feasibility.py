@@ -148,6 +148,7 @@ def main():
     parser.add_argument('--no-camera', action='store_true')
     parser.add_argument('--audio-priority', '--spotify-priority', dest='spotify_priority', action='store_true', help='Lower Other audio audio during speech; restore afterwards')
     parser.add_argument('--smoke', action='store_true')
+    parser.add_argument('--windowed', action='store_true')
     parser.add_argument('--scenario', choices=['tunnel','obstacle','rain'], default='tunnel')
     parser.add_argument('--config', type=Path, default=DEFAULT_PATH)
     args = parser.parse_args()
@@ -163,7 +164,8 @@ def main():
         os.environ['SDL_VIDEODRIVER'] = 'dummy'
         os.environ['SDL_AUDIODRIVER'] = 'dummy'
     pygame.init()
-    screen = pygame.display.set_mode((1440, 850), pygame.RESIZABLE)
+    fullscreen = not (args.windowed or args.smoke)
+    screen = pygame.display.set_mode((0,0),pygame.FULLSCREEN) if fullscreen else pygame.display.set_mode((1440,850),pygame.RESIZABLE)
     pygame.display.set_caption('IIS A2 - Integrated tunnel simulation')
     canvas = pygame.Surface((1440, 850))
     font = pygame.font.SysFont('Segoe UI', 23)
@@ -179,6 +181,9 @@ def main():
     samples = deque()
     monitor = Monitor()
     started = False
+    calibration_dialog = True
+    calibrate_button = pygame.Rect(460,458,245,58)
+    skip_button = pygame.Rect(735,458,245,58)
     calibration_note = 'Press C to set your forward position'
     flashes = {}
     start_button = pygame.Rect(520, 488, 360, 54)
@@ -244,6 +249,14 @@ def main():
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     mx, my = event.pos
                     mapped = (mx*1440/screen.get_width(), my*850/screen.get_height())
+                    if calibration_dialog:
+                        if calibrate_button.collidepoint(mapped):
+                            pygame.event.post(pygame.event.Event(pygame.KEYDOWN,key=pygame.K_c))
+                        elif skip_button.collidepoint(mapped):
+                            calibration_dialog = False
+                            calibrating = False
+                            emit('Initial calibration skipped; monitoring needs calibration')
+                        continue
                     if started and change_button.collidepoint(mapped):
                         pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
                     elif not started:
@@ -259,6 +272,17 @@ def main():
                 if event.type == pygame.MOUSEWHEEL:
                     log_scroll = max(0, log_scroll+event.y*3)
                 if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_F11:
+                        fullscreen = not fullscreen
+                        screen = pygame.display.set_mode((0,0),pygame.FULLSCREEN) if fullscreen else pygame.display.set_mode((1440,850),pygame.RESIZABLE)
+                        continue
+                    if calibration_dialog and event.key == pygame.K_k:
+                        calibration_dialog = False
+                        calibrating = False
+                        emit('Initial calibration skipped; monitoring needs calibration')
+                        continue
+                    if calibration_dialog and event.key not in (pygame.K_c,pygame.K_ESCAPE):
+                        continue
                     if event.key == pygame.K_PAGEUP:
                         log_scroll += 12
                     elif event.key == pygame.K_PAGEDOWN:
@@ -327,6 +351,7 @@ def main():
                     if len(samples) >= 12 and max(np.std(samples, axis=0)) < 5:
                         baseline = tuple(np.median(samples, axis=0))
                         calibration_note = 'Forward position set'
+                        calibration_dialog = False
                         emit(calibration_note)
                     else:
                         calibration_note = 'Calibration failed. Hold still and retry C.'
@@ -467,12 +492,28 @@ def main():
                 text('Parameters are editable in scenarios.json. TAB returns here.',380,445,MUTED,small)
                 pygame.draw.rect(canvas,TEAL,start_button,border_radius=10)
                 text('Start drive / ENTER',558,497,BG,heading)
+            if calibration_dialog:
+                shade = pygame.Surface(canvas.get_size(),pygame.SRCALPHA)
+                shade.fill((0,0,0,175))
+                canvas.blit(shade,(0,0))
+                pygame.draw.rect(canvas,'#1b2d3c',(365,245,710,330),border_radius=16)
+                pygame.draw.rect(canvas,TEAL,(365,245,710,330),2,border_radius=16)
+                text('First, calibrate your camera',405,272,WHITE,heading)
+                text('Press C and face the road view with your eyes open.',405,323)
+                text('Hold still for two seconds to set your forward position.',405,359,WHITE,small)
+                wrap(calibration_note,405,402,620,TEAL)
+                pygame.draw.rect(canvas,TEAL,calibrate_button,border_radius=8)
+                text('Calibrate / C',490,474,BG)
+                pygame.draw.rect(canvas,'#3a4c5c',skip_button,border_radius=8)
+                text('Skip for now / K',755,474,WHITE)
+                text('You can recalibrate later with C. F11 toggles full screen.',405,542,MUTED,small)
             screen.blit(pygame.transform.smoothscale(canvas, screen.get_size()), (0, 0))
             pygame.display.flip()
             frames += 1
             if args.smoke:
-                pygame.image.save(canvas,str(ROOT / f'evidence/navigation-{selected_scenario}-{frames}.png'))
+                pygame.image.save(canvas,str(ROOT / f'evidence/startup-{selected_scenario}-{frames}.png'))
                 started = True
+                calibration_dialog = False
                 if frames == 1:
                     car.distance = car.boundary
                     if selected_scenario == 'rain':

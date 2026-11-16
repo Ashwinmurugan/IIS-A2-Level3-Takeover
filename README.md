@@ -1,6 +1,6 @@
 # Level 3 Takeover Simulation
 
-README prose word count: 1581 (excluding commands and this line).
+README prose word count: 1688 (excluding commands and this line).
 
 ## Project status
 
@@ -100,3 +100,8 @@ I requested a clear instruction when looking left/right during a takeover reques
 ### Scenario navigation and tracking-loss clarity
 
 I requested a discoverable return to scenario selection and questioned zero readings when tracking was lost. The driving screen now has a Change scenario button using the same reset path as Tab, including scaled-window click coordinates. Tracking is explicitly unavailable if frames become stale or orientation values are invalid. Missing observations clear yaw/pitch and eye scores rather than displaying zero. A valid zero-degree estimate still means forward orientation. Loss and recovery are recorded as head-cue state changes. Control mode and timed warnings continue independently. Automated checks cover stale, missing, invalid and valid zero observations. Live covering/uncovering of the camera remains part of my review.
+
+
+### Startup calibration and full-screen display
+
+I asked for an initial calibration reminder and a larger launch window. The app now opens full screen, with F11 to toggle windowed mode or --windowed at launch. A first-launch dialog explains calibration and offers C or a Calibrate button. It closes after successful calibration and stays visible after failure. Skip for now (K) allows testing without a webcam. The reminder appears once each application launch; later calibration remains available with C. Starting a drive is blocked only while this dismissible dialog is open. Smoke rendering uses a window-sized off-screen display and captures the dialog; live full-screen appearance needs user review.
