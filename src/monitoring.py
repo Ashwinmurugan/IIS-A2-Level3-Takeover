@@ -29,7 +29,7 @@ class Monitor:
         yaw = (yaw - baseline[0] + 180) % 360 - 180
         pitch = (pitch - baseline[1] + 180) % 360 - 180
         if abs(pitch) > 18 and abs(pitch)/18 > abs(yaw)/25:
-            head = 'Looking up' if pitch > 0 else 'Looking down'
+            head = 'Looking up' if pitch < 0 else 'Looking down'
         elif abs(yaw) > 25:
             head = 'Looking left' if yaw > 0 else 'Looking right'
         else:
@@ -53,8 +53,8 @@ def verify():
     assert monitor.classify((0, 0, .9), (0, 0), 1.6)[1] == 'Eyes appear closed'
     assert monitor.classify(None, (0, 0), 2)[1] == 'Unknown'
     assert monitor.classify((0, 0, .9), (0, 0), 2.1)[1] == 'Brief closure'
-    assert monitor.classify((0, -30, 0), (0, 0), 3)[0] == 'Looking down'
-    assert monitor.classify((0, 30, 0), (0, 0), 3)[0] == 'Looking up'
+    assert monitor.classify((0, -30, 0), (0, 0), 3)[0] == 'Looking up'
+    assert monitor.classify((0, 30, 0), (0, 0), 3)[0] == 'Looking down'
     assert monitor.classify((40, 0, 0), (0, 0), 3)[0] == 'Looking left'
     assert monitor.classify((-40, 0, 0), (0, 0), 3)[0] == 'Looking right'
     print('PASS: orientation, blink duration, sustained closure and tracking-loss reset')
