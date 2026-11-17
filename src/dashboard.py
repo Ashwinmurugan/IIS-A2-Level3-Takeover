@@ -334,6 +334,7 @@ def draw_dashboard(surface, car, *, now, camera_view, monitoring, audio, history
     draw_alert(surface, car, now)
     draw_instruments(surface, car, now, *audio)
     label(surface, 'EVENT LOG', 1110, 112, size=20, bold=True)
+    label(surface, 'Mental model aid', 1282, 117, size=15, color=MUTED)
     scroll = draw_log(surface, history, font(19, True), scroll)
 
     for index, (code, key, action) in enumerate(CONTROLS):
