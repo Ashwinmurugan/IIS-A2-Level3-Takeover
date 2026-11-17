@@ -172,16 +172,21 @@ def draw_instruments(surface, car, now, audio_label, priority_enabled):
     label(surface, f'{car.distance:.0f} m travelled', 363, 682, size=17, color=MUTED)
 
     centre = (707, 647)
-    pygame.draw.circle(surface, '#172730', centre, 51)
-    pygame.draw.circle(surface, '#425361', centre, 46, 7)
-    pygame.draw.arc(surface, '#9badb9', (661, 601, 92, 92), .08, math.pi-.08, 3)
-    pygame.draw.circle(surface, '#364754', centre, 39, 2)
+    rotation = car.steer * .65
+    pygame.draw.circle(surface, '#080e14', (centre[0],centre[1]+3), 48)
+    pygame.draw.circle(surface, '#526678', centre, 45, 8)
+    pygame.draw.arc(surface, '#a6bccb', (662,602,90,90), .25, math.pi-.25, 2)
+    pygame.draw.circle(surface, '#243643', centre, 38, 2)
     for spoke in (0, math.pi, math.pi/2):
-        angle = spoke + car.steer * .65
+        angle = spoke + rotation
         tip = (centre[0]+math.cos(angle)*39, centre[1]+math.sin(angle)*39)
-        pygame.draw.line(surface, '#788d9d', centre, tip, 7)
-    pygame.draw.circle(surface, '#526d80', centre, 13)
-    pygame.draw.circle(surface, '#a0b3bf', centre, 13, 1)
+        pygame.draw.line(surface, '#536d7d', centre, tip, 9)
+    pygame.draw.circle(surface, '#1b2c38', centre, 16)
+    pygame.draw.circle(surface, '#7c95a6', centre, 16, 2)
+    mark = rotation - math.pi/2
+    inner = (centre[0]+math.cos(mark)*37, centre[1]+math.sin(mark)*37)
+    outer = (centre[0]+math.cos(mark)*45, centre[1]+math.sin(mark)*45)
+    pygame.draw.line(surface, TEAL, inner, outer, 3)
     blink = int(now * 2) % 2 == 0
     for direction in (-1, 1):
         x = centre[0] + direction*83
@@ -261,14 +266,12 @@ def draw_calibration(surface, calibration, calibrate, skip):
 
 def draw_dashboard(surface, car, *, now, camera_view, monitoring, audio, history, scroll,
                    keys, flashes, started, change_button, scenario_buttons, start_button,
-                   calibration_dialog, calibrate_button, skip_button, demo_view=False):
+                   calibration_dialog, calibrate_button, skip_button):
     surface.fill(BACKGROUND)
     pygame.draw.line(surface, BORDER, (16, 84), (1424, 84))
     pygame.draw.rect(surface, TEAL, (23, 21, 4, 49), border_radius=2)
     label(surface, 'Level 3 Takeover Simulator', 40, 17, size=33, bold=True)
     label(surface, 'Desktop driving simulation   ·   F11 full screen', 41, 57, size=17, color=MUTED)
-    view_name = 'Clean demo view' if demo_view else 'Cockpit view'
-    label(surface, f'F9  ·  {view_name}', 886, 40, size=18, color=TEAL if demo_view else MUTED)
     if started:
         button(surface, change_button, 'Change scenario  /  Tab')
     for rect in ((16, 96, 304, 675), (326, 96, 764, 675), (1096, 96, 328, 675)):
@@ -277,7 +280,7 @@ def draw_dashboard(surface, car, *, now, camera_view, monitoring, audio, history
     label(surface, SCENARIO_LABELS[car.scenario].upper(), 340, 113, size=20, bold=True)
     location = car.location_label
     label(surface, location, 1078 - font(18).size(location)[0], 115, size=18, color=MUTED)
-    draw_road(surface, car, pygame.Rect(338, 241, 740, 321), demo_view=demo_view)
+    draw_road(surface, car, pygame.Rect(338, 241, 740, 321))
     draw_alert(surface, car, now)
     draw_instruments(surface, car, now, *audio)
     label(surface, 'EVENT LOG', 1110, 112, size=20, bold=True)
