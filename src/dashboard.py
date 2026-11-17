@@ -53,6 +53,13 @@ def label(surface, value, x, y, *, size=20, color=WHITE, bold=False):
     surface.blit(font(size, bold).render(value, True, color), (x, y))
 
 
+def fitted_label(surface, value, x, y, width, *, size=20, color=WHITE, bold=False):
+    """Keep variable status text within its allotted instrument area."""
+    while size > 14 and font(size, bold).size(value)[0] > width:
+        size -= 1
+    label(surface, value, x, y, size=size, color=color, bold=bold)
+
+
 def paragraph(surface, value, x, y, width, *, size=18, color=MUTED):
     face = font(size)
     line = ''
@@ -108,7 +115,7 @@ def draw_monitor(surface, preview, status, head, eyes, angles, closure, closed_f
         frame(surface, (32, top, 274, 69), INSET, radius=8)
         pygame.draw.rect(surface, color, (32, top+14, 3, 40), border_radius=2)
         label(surface, caption, 46, top+10, size=15, color=MUTED, bold=True)
-        label(surface, value, 46, top+30, size=22, color=color, bold=True)
+        fitted_label(surface, value, 46, top+30, 248, size=22, color=color, bold=True)
 
     label(surface, 'TRACKING DETAILS', 34, 540, size=15, color=MUTED, bold=True)
     pose = '— / —' if angles is None else f'{angles[0]:+.0f}° / {angles[1]:+.0f}°'
@@ -153,7 +160,8 @@ def draw_alert(surface, car, now):
         title, detail = 'COLLISION RECORDED', 'Stopping margin insufficient. Press R to restart.'
     if denied:
         title = 'AUTOMATION UNAVAILABLE'
-    label(surface, title, 410, 158, size=37 if active else 32, color=color if active else WHITE, bold=True)
+    fitted_label(surface, title, 410, 158, 530 if show_takeover_key else 650,
+                 size=37 if active else 32, color=color if active else WHITE, bold=True)
     paragraph(surface, detail, 411, 199, 522 if show_takeover_key else 650, color=WHITE, size=18)
     if show_takeover_key:
         frame(surface, (951, 167, 108, 46), color, color, 7)
@@ -200,7 +208,7 @@ def draw_instruments(surface, car, now, audio_label, priority_enabled):
 
     label(surface, 'CONTROL MODE', 854, 588, size=15, color=MUTED, bold=True)
     mode_color = RED if car.stage >= 3 else AMBER if car.stage else TEAL
-    label(surface, car.mode, 854, 613, size=21, color=mode_color, bold=True)
+    fitted_label(surface, car.mode, 854, 613, 201, size=21, color=mode_color, bold=True)
     label(surface, f'Lane {car.lane+1}', 854, 649, size=20)
     label(surface, f'Offset {car.position-car.lane:+.2f}', 854, 678, size=17, color=MUTED)
 

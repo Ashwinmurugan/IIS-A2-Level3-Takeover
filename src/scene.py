@@ -87,7 +87,8 @@ def draw_road(canvas, car, viewport):
             wall = viewport.left if side < 0 else viewport.right
             pygame.draw.polygon(canvas,color,[(wall,viewport.top),(vanishing_x,horizon-34),
                                                (vanishing_x,horizon+8),(wall,ground)])
-        for depth in (.92,.70,.50,.32,.19,.10):
+        for index in range(8):
+            depth = ((index/8 + car.distance/135) % 1)**2
             x, y = project(.5,depth)
             pygame.draw.lines(canvas,'#39434b',False,arch(x,y,19+depth*344,22+depth*330),max(1,round(3*depth)))
         exit_depth = 37/(37+car.tunnel_length+gap)
@@ -118,21 +119,35 @@ def draw_road(canvas, car, viewport):
     road_color = pygame.Color('#353f49').lerp(pygame.Color('#283641'), rain_intensity)
     band(-.5,1.5,road_color)
     if storm:
-        for index in range(12):
-            depth = ((index/12 + car.distance/91) % 1)**2
-            lateral = -.4+(index*0.427) % 1.52
-            color = road_color.lerp(pygame.Color('#627988'), rain_intensity*depth*.32)
-            band(lateral,lateral+.35,color,depth,min(1,depth+.10))
+        # Narrow, low-contrast streaks suggest wet asphalt rather than paving tiles.
+        for index in range(32):
+            depth = ((index/32 + car.distance/105) % 1)**2
+            lateral = -.43+(index*0.427) % 1.80
+            color = road_color.lerp(pygame.Color('#627988'), rain_intensity*depth*.19)
+            band(lateral,lateral+.035,color,depth,min(1,depth+.08))
     if tunnel and not inside and gap > 0:
         depth = 43/(43+gap)
         band(-.50,1.50,road_color.lerp(pygame.Color('#101820'),.42),depth,min(1,depth+.06))
     if inside:
         for index in range(6):
             depth = ((index/6 + car.distance/125) % 1)**2
-            color = road_color.lerp(pygame.Color('#7d786a'),.10+.27*depth)
-            band(-.48,1.48,color,depth,min(1,depth+.035+.045*depth))
+            # Soft light pools keep the lane markings visually dominant.
+            for edge in range(5):
+                start = depth + edge*.006
+                strength = (.035+.09*depth)*(1-abs(edge-2)/3)
+                color = road_color.lerp(pygame.Color('#b6a277'),strength)
+                band(-.48,1.48,color,start,min(1,start+.012))
     band(-.49,-.465,'#dbe2db')
     band(1.465,1.49,'#dbe2db')
+    if not inside:
+        # Perspective rails provide lateral motion cues without covering the road.
+        for side in (-.88, 1.88):
+            for lift, color in ((12, '#52635f'), (17, '#a0aaa5')):
+                points = []
+                for depth in (0, .15, .4, .7, 1):
+                    x, y = project(side, depth)
+                    points.append((x, y-lift*depth))
+                pygame.draw.lines(canvas, color, False, points, 2)
     for index in range(13):
         offset = (index/13 + car.distance/105) % 1
         band(.489,.511,'#e0e6e1',offset**2,min(1,offset+.032)**2)
