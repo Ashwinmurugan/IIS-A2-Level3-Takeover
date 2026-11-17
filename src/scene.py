@@ -118,6 +118,11 @@ def draw_road(canvas, car, viewport):
     band(-.67,1.67,'#596671' if inside else '#747b76')
     road_color = pygame.Color('#353f49').lerp(pygame.Color('#283641'), rain_intensity)
     band(-.5,1.5,road_color)
+    # Fine depth shading adds asphalt volume without noisy animated texture.
+    for strip in range(40):
+        depth = strip/40
+        shade = road_color.lerp(pygame.Color('#17212b'), depth*.18)
+        band(-.5,1.5,shade,depth,(strip+1)/40)
     if storm:
         # Narrow, low-contrast streaks suggest wet asphalt rather than paving tiles.
         for index in range(32):
@@ -163,6 +168,8 @@ def draw_road(canvas, car, viewport):
                 pygame.draw.line(canvas, '#f7deaa', (x-9*depth,lamp_y), (x+9*depth,lamp_y), 2+round(2*depth))
             else:
                 tip = y-3-27*depth
+                pygame.draw.line(canvas, '#293e38', (x,y), (x+23*depth,y+5*depth),
+                                 max(1,round(3*depth)))
                 pygame.draw.line(canvas, '#aab8b3', (x,y), (x,tip), max(1,round(4*depth)))
                 if depth > .12:
                     pygame.draw.circle(canvas,'#dae1d9',(x,tip+2),max(1,round(3*depth)))
@@ -183,6 +190,10 @@ def draw_road(canvas, car, viewport):
         pygame.draw.rect(canvas, '#d4bf87', (x-width*.14,y-width*.18,width*.28,max(2,width*.08)), border_radius=2)
         for side in (-1, 1):
             pygame.draw.circle(canvas, '#ffab63', (x+side*width*.36,y-width*.13), max(2,int(width*.06)))
+        pygame.draw.line(canvas, '#633b3e', (x-width*.43,y-width*.27),
+                         (x+width*.43,y-width*.27), max(1,round(width*.025)))
+        pygame.draw.line(canvas, '#c6cdd0', (x-width*.42,y-width*.04),
+                         (x+width*.42,y-width*.04), max(1,round(width*.025)))
         size = max(7,width*.16)
         triangle_x = x + width*.65
         pygame.draw.polygon(canvas, '#ffbc70', [(triangle_x,y-size*1.5),(triangle_x-size,y),(triangle_x+size,y)], 2)

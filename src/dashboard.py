@@ -78,6 +78,11 @@ def paragraph(surface, value, x, y, width, *, size=18, color=MUTED):
 def frame(surface, rect, fill=PANEL, edge=BORDER, radius=12):
     pygame.draw.rect(surface, fill, rect, border_radius=radius)
     pygame.draw.rect(surface, edge, rect, width=1, border_radius=radius)
+    bounds = pygame.Rect(rect)
+    if bounds.height > 80:
+        highlight = pygame.Color(fill).lerp(pygame.Color('#70849a'), .12)
+        pygame.draw.line(surface, highlight, (bounds.left+radius, bounds.top+1),
+                         (bounds.right-radius, bounds.top+1))
 
 
 def button(surface, rect, value, selected=False):
@@ -178,6 +183,11 @@ def draw_instruments(surface, car, now, audio_label, priority_enabled):
     label(surface, speed, 359, 602, size=65, bold=True)
     label(surface, 'km/h', 370 + font(65, True).size(speed)[0], 643, size=18, color=MUTED)
     label(surface, f'{car.distance:.0f} m travelled', 363, 682, size=17, color=MUTED)
+    # An unnumbered speed strip is a supplementary cue, not a speed-limit claim.
+    for index in range(24):
+        lit = index < round(min(1, max(0, car.speed)/140)*24)
+        pygame.draw.rect(surface, TEAL if lit else '#293b49',
+                         (363+index*8, 672, 5, 3), border_radius=1)
 
     centre = (707, 647)
     rotation = car.steer * .65
@@ -191,6 +201,8 @@ def draw_instruments(surface, car, now, audio_label, priority_enabled):
         pygame.draw.line(surface, '#536d7d', centre, tip, 9)
     pygame.draw.circle(surface, '#1b2c38', centre, 16)
     pygame.draw.circle(surface, '#7c95a6', centre, 16, 2)
+    pygame.draw.line(surface, '#92a8b7', (700,644), (714,644), 2)
+    pygame.draw.line(surface, '#92a8b7', (703,649), (711,649), 2)
     mark = rotation - math.pi/2
     inner = (centre[0]+math.cos(mark)*37, centre[1]+math.sin(mark)*37)
     outer = (centre[0]+math.cos(mark)*45, centre[1]+math.sin(mark)*45)
