@@ -44,7 +44,7 @@ def canvas_point(position, size):
             (position[1] - rect.y) * CANVAS_SIZE[1] / rect.h)
 
 
-@lru_cache(maxsize=24)
+@lru_cache(maxsize=64)
 def font(size, bold=False):
     return pygame.font.SysFont('Segoe UI', size, bold=bold)
 
@@ -86,7 +86,11 @@ def frame(surface, rect, fill=PANEL, edge=BORDER, radius=12):
 
 
 def button(surface, rect, value, selected=False):
-    frame(surface, rect, TEAL if selected else '#21313f', TEAL if selected else BORDER, 8)
+    display = pygame.display.get_surface()
+    hover = bool(display and pygame.mouse.get_focused() and
+                 rect.collidepoint(canvas_point(pygame.mouse.get_pos(), display.get_size())))
+    frame(surface, rect, TEAL if selected else '#2d4354' if hover else '#21313f',
+          TEAL if selected or hover else BORDER, 8)
     rendered = font(20, True).render(value, True, BACKGROUND if selected else WHITE)
     surface.blit(rendered, rendered.get_rect(center=rect.center))
 
@@ -100,7 +104,11 @@ def draw_monitor(surface, preview, status, head, eyes, angles, closure, closed_f
         image = pygame.transform.scale(pygame.transform.flip(image, True, False), camera_view.size)
         surface.blit(image, camera_view)
     else:
-        paragraph(surface, status, 50, 235, 234)
+        pygame.draw.circle(surface, '#243748', (169, 242), 34, 1)
+        pygame.draw.rect(surface, MUTED, (149,230,32,24), 2, border_radius=5)
+        pygame.draw.polygon(surface, MUTED, [(181,236),(191,231),(191,253),(181,248)], 2)
+        pygame.draw.line(surface, AMBER, (146,260), (192,222), 2)
+        paragraph(surface, status, 50, 288, 234, size=16)
     preview_color = TEAL if preview is not None else MUTED
     preview_label = 'CAMERA FEED' if preview is not None else 'NO CAMERA FEED'
     frame(surface, (42, 162, 143, 25), INSET, BORDER, 5)
@@ -123,11 +131,19 @@ def draw_monitor(surface, preview, status, head, eyes, angles, closure, closed_f
         fitted_label(surface, value, 46, top+30, 248, size=22, color=color, bold=True)
 
     label(surface, 'TRACKING DETAILS', 34, 540, size=15, color=MUTED, bold=True)
-    pose = '— / —' if angles is None else f'{angles[0]:+.0f}° / {angles[1]:+.0f}°'
-    label(surface, f'Yaw / pitch   {pose}', 34, 567, size=19)
+    for index, caption in enumerate(('Yaw', 'Pitch')):
+        y = 565 + index*26
+        value = None if angles is None else angles[index]
+        label(surface, caption, 34, y, size=16, color=MUTED)
+        label(surface, '—' if value is None else f'{value:+.0f}°', 92, y, size=17)
+        pygame.draw.line(surface, BORDER, (166,y+12), (291,y+12), 3)
+        pygame.draw.line(surface, '#607587', (228,y+6), (228,y+18), 1)
+        if value is not None:
+            x = 228 + max(-1,min(1,value/60))*62
+            pygame.draw.circle(surface, TEAL, (round(x),y+12), 4)
     eye_value = f'{closure:.2f} · {closed_for:.1f} s' if math.isfinite(closure) else '—'
-    label(surface, f'Closure score   {eye_value}', 34, 598, size=19)
-    pygame.draw.line(surface, BORDER, (34, 637), (292, 637))
+    label(surface, f'Closure score   {eye_value}', 34, 619, size=16, color=MUTED)
+    pygame.draw.line(surface, BORDER, (34, 646), (292, 646))
     paragraph(surface, calibration, 34, 650, 258, size=18, color=TEAL)
     paragraph(surface, 'C sets your forward reference. Camera frames stay on this PC.', 34, 709, 255, size=17)
 
@@ -135,11 +151,11 @@ def draw_monitor(surface, preview, status, head, eyes, angles, closure, closed_f
 def draw_alert(surface, car, now):
     notice_active = now < car.notice_until and bool(car.notice)
     denied = notice_active and 'unavailable' in car.notice.lower()
-    active = car.stage > 0 or denied
-    color = RED if car.stage >= 2 else AMBER if active else TEAL
-    fill = '#321d24' if car.stage >= 2 else '#30251b' if active else '#13272b'
-    frame(surface, (338, 149, 740, 84), fill, color, 9)
-    pygame.draw.rect(surface, color, (343, 158, 3, 66), border_radius=2)
+    active = car.stage > 0 or denied or car.collision or car.mode == 'Stopped'
+    color = RED if car.stage >= 2 or car.collision else AMBER if active else TEAL
+    fill = '#321d24' if car.stage >= 2 or car.collision else '#30251b' if active else '#13272b'
+    frame(surface, (338, 149, 740, 92), fill, color, 9)
+    pygame.draw.rect(surface, color, (343, 158, 3, 74), border_radius=2)
     if active:
         pygame.draw.polygon(surface, color, [(372, 166), (350, 211), (395, 211)])
         label(surface, '!', 368, 176, size=24, color=BACKGROUND, bold=True)
@@ -166,8 +182,8 @@ def draw_alert(surface, car, now):
     if denied:
         title = 'AUTOMATION UNAVAILABLE'
     fitted_label(surface, title, 410, 158, 530 if show_takeover_key else 650,
-                 size=37 if active else 32, color=color if active else WHITE, bold=True)
-    paragraph(surface, detail, 411, 199, 522 if show_takeover_key else 650, color=WHITE, size=18)
+                 size=34 if active else 32, color=color if active else WHITE, bold=True)
+    paragraph(surface, detail, 411, 199, 522 if show_takeover_key else 650, color=WHITE, size=17)
     if show_takeover_key:
         frame(surface, (951, 167, 108, 46), color, color, 7)
         label(surface, 'Press Space', 962, 179, size=17, color=BACKGROUND, bold=True)
@@ -178,16 +194,22 @@ def draw_instruments(surface, car, now, audio_label, priority_enabled):
     frame(surface, (347, 575, 722, 141), '#101921', '#263746', 8)
     pygame.draw.line(surface, '#283b48', (578, 590), (578, 697))
     pygame.draw.line(surface, '#283b48', (835, 590), (835, 697))
-    label(surface, 'SPEED', 363, 588, size=15, color=MUTED, bold=True)
+    label(surface, 'SPEED', 363, 582, size=13, color=MUTED, bold=True)
     speed = f'{car.speed:.0f}'
-    label(surface, speed, 359, 602, size=65, bold=True)
-    label(surface, 'km/h', 370 + font(65, True).size(speed)[0], 643, size=18, color=MUTED)
-    label(surface, f'{car.distance:.0f} m travelled', 363, 682, size=17, color=MUTED)
-    # An unnumbered speed strip is a supplementary cue, not a speed-limit claim.
-    for index in range(24):
-        lit = index < round(min(1, max(0, car.speed)/140)*24)
-        pygame.draw.rect(surface, TEAL if lit else '#293b49',
-                         (363+index*8, 672, 5, 3), border_radius=1)
+    # A fixed 0–140 display scale; no inferred speed-limit or safety judgement.
+    for index in range(47):
+        angle = math.radians(-210 + index*240/46)
+        inner, outer = (63,70) if index % 5 else (60,70)
+        lit = index/46 <= max(0, car.speed)/140
+        pygame.draw.line(surface, TEAL if lit else '#314654',
+                         (462+math.cos(angle)*inner,660+math.sin(angle)*inner),
+                         (462+math.cos(angle)*outer,660+math.sin(angle)*outer), 2)
+    label(surface, speed, 462-font(52,True).size(speed)[0]//2, 619, size=52, bold=True)
+    label(surface, 'km/h', 443, 674, size=14, color=MUTED)
+    label(surface, '0', 387, 694, size=12, color=MUTED)
+    label(surface, '140', 516, 694, size=12, color=MUTED)
+    distance = f'{car.distance:.0f} m travelled'
+    label(surface, distance, 462-font(14).size(distance)[0]//2, 698, size=14, color=MUTED)
 
     centre = (707, 647)
     rotation = car.steer * .65
@@ -219,10 +241,18 @@ def draw_instruments(surface, car, now, audio_label, priority_enabled):
     label(surface, steering_label, x, 695, size=15, color=steering_color, bold=True)
 
     label(surface, 'CONTROL MODE', 854, 588, size=15, color=MUTED, bold=True)
-    mode_color = RED if car.stage >= 3 else AMBER if car.stage else TEAL
+    mode_color = RED if car.stage >= 3 or car.collision else AMBER if car.stage or car.mode == 'Stopped' else TEAL
     fitted_label(surface, car.mode, 854, 613, 201, size=21, color=mode_color, bold=True)
-    label(surface, f'Lane {car.lane+1}', 854, 649, size=20)
-    label(surface, f'Offset {car.position-car.lane:+.2f}', 854, 678, size=17, color=MUTED)
+    label(surface, f'Lane {car.lane+1}  ·  offset {car.position-car.lane:+.2f}', 854, 645, size=16, color=MUTED)
+    # A top-down position strip uses the simulated position, not camera sensing.
+    frame(surface, (854,672,201,35), INSET, BORDER, 5)
+    for lane_x in (904,1005):
+        label(surface, str(1 if lane_x == 904 else 2), lane_x-4, 680, size=12, color='#627789')
+    pygame.draw.line(surface, '#607180', (954,676), (954,702), 1)
+    x = 904 + car.position*101
+    x = max(863,min(1046,x))
+    pygame.draw.rect(surface, mode_color, (x-8,677,16,24), border_radius=4)
+    pygame.draw.rect(surface, '#142631', (x-5,682,10,6), border_radius=2)
 
     pygame.draw.line(surface, BORDER, (352, 716), (1064, 716))
     vibration = car.stage >= 2
@@ -278,7 +308,7 @@ def draw_calibration(surface, calibration, calibrate, skip):
     paragraph(surface, 'Set a forward reference so the simulator can estimate when your head turns away.',
               405, 326, 610, size=20, color=WHITE)
     label(surface, 'Face the road view, keep your eyes open and hold for two seconds.', 405, 383, size=18, color=MUTED)
-    label(surface, calibration, 405, 421, size=18, color=TEAL)
+    label(surface, calibration, 405, 421, size=18, color=AMBER if 'failed' in calibration.lower() else TEAL)
     button(surface, calibrate, 'Calibrate  /  C', True)
     button(surface, skip, 'Skip for now  /  K')
     label(surface, 'C recalibrates during the drive. F11 toggles full screen.', 405, 550, size=18, color=MUTED)
@@ -300,7 +330,7 @@ def draw_dashboard(surface, car, *, now, camera_view, monitoring, audio, history
     label(surface, SCENARIO_LABELS[car.scenario].upper(), 340, 113, size=20, bold=True)
     location = car.location_label
     label(surface, location, 1078 - font(18).size(location)[0], 115, size=18, color=MUTED)
-    draw_road(surface, car, pygame.Rect(338, 241, 740, 321))
+    draw_road(surface, car, pygame.Rect(338, 249, 740, 305))
     draw_alert(surface, car, now)
     draw_instruments(surface, car, now, *audio)
     label(surface, 'EVENT LOG', 1110, 112, size=20, bold=True)

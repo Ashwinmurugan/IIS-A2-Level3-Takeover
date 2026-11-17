@@ -9,20 +9,63 @@ import pygame
 def sky(size, storm_level):
     surface = pygame.Surface(size)
     storm = storm_level / 20
-    top = pygame.Color('#426c8a').lerp(pygame.Color('#25323f'), storm)
-    base = pygame.Color('#c2d3d6').lerp(pygame.Color('#899ba5'), storm)
+    top = pygame.Color('#527f9b').lerp(pygame.Color('#303e4d'), storm)
+    base = pygame.Color('#dce5de').lerp(pygame.Color('#9dabb1'), storm)
     for y in range(size[1]):
-        color = top.lerp(base, y / max(1, size[1]-1))
+        color = top.lerp(base, min(1, y / max(1, size[1]*.43)))
         pygame.draw.line(surface, color, (0, y), (size[0], y))
-    clouds = pygame.Surface(size, pygame.SRCALPHA)
-    tint = pygame.Color(238,244,240,41).lerp(pygame.Color(33,45,56,25), storm)
-    for index in range(6):
-        x = (index*193 + 32) % size[0]
-        y = 8 + (index*19) % 66
-        width = 95 + index*11
-        pygame.draw.ellipse(clouds, tint, (x-70,y,width,21))
-    surface.blit(clouds,(0,0))
+    # Several translucent lobes softened at low resolution avoid flat oval clouds.
+    low = pygame.Surface((max(1,size[0]//4), max(1,size[1]//4)), pygame.SRCALPHA)
+    tint = pygame.Color(245,247,239,68).lerp(pygame.Color(55,66,77,59), storm)
+    for index in range(12):
+        x = (index//4)*low.get_width()*.42 + (index%4)*8-18
+        y = 3 + (index//4)*4 + (index%3)*2
+        width = 23 + (index*11) % 17
+        pygame.draw.ellipse(low, tint, (x,y,width,5+(index%3)))
+    soft = pygame.transform.smoothscale(low,(max(1,size[0]//14),max(1,size[1]//14)))
+    surface.blit(pygame.transform.smoothscale(soft,size),(0,0))
+    # Haze and distant ridgelines are part of the cached background.
+    for level, color in enumerate(('#8fa6aa','#728d90','#587575')):
+        points = [(0,109)]
+        for step in range(101):
+            x = step*size[0]/100
+            ridge = 69+level*11 - 9*math.sin(step*.097+level*2) - 5*math.sin(step*.31)
+            points.append((x,ridge))
+        points.append((size[0],109))
+        pygame.draw.polygon(surface, pygame.Color(color).lerp(pygame.Color('#76888e'),storm*.55), points)
     return surface
+
+
+@lru_cache(maxsize=256)
+def tree_sprite(height, variant, storm_level):
+    """Small cached roadside silhouettes; no assets or random frame flicker."""
+    height = max(8,height)
+    width = max(8,round(height*.66))
+    layer = pygame.Surface((width*2,height*2), pygame.SRCALPHA)
+    cx, bottom = width, height*2-2
+    storm = storm_level/20
+    trunk = pygame.Color('#5e6554').lerp(pygame.Color('#3b4d4d'),storm)
+    dark = pygame.Color('#304b42').lerp(pygame.Color('#344c4f'),storm)
+    mid = pygame.Color('#456452').lerp(pygame.Color('#415b5c'),storm)
+    pygame.draw.line(layer,trunk,(cx,bottom),(cx,height*.7),max(2,round(height*.10)))
+    for branch in range(8):
+        angle = branch*2.39+variant
+        rx = cx+math.cos(angle)*width*.35
+        ry = height*.85+math.sin(angle)*height*.32
+        radius = max(3,round(height*(.31+(branch%3)*.025)))
+        pygame.draw.circle(layer,dark if branch%3 else mid,(rx,ry),radius)
+    return pygame.transform.smoothscale(layer,(width,height))
+
+
+def lamp(canvas, x, y, radius, warmth):
+    """Restrained light bloom, rendered only within the road viewport."""
+    radius = max(3,round(radius))
+    glow = pygame.Surface((radius*4,radius*4),pygame.SRCALPHA)
+    for scale, alpha in ((2,10),(1.5,17),(1,35),(.55,80)):
+        pygame.draw.ellipse(glow,(*warmth,alpha),
+                            (radius*(2-scale),radius*(2-scale)*.8+radius*.4,
+                             radius*scale*2,radius*scale*1.6))
+    canvas.blit(glow,(x-radius*2,y-radius*2))
 
 
 def arch(x, bottom, half_width, height):
@@ -82,15 +125,23 @@ def draw_road(canvas, car, viewport):
                                             project(right,end), project(left,end)])
 
     if inside:
-        canvas.fill('#171d25', viewport)
+        canvas.fill('#141c24', viewport)
         for side, color in ((-1,'#2b353d'),(1,'#222c35')):
             wall = viewport.left if side < 0 else viewport.right
             pygame.draw.polygon(canvas,color,[(wall,viewport.top),(vanishing_x,horizon-34),
                                                (vanishing_x,horizon+8),(wall,ground)])
-        for index in range(8):
-            depth = ((index/8 + car.distance/135) % 1)**2
+        for index in range(12):
+            depth = ((index/12 + car.distance/135) % 1)**2
             x, y = project(.5,depth)
-            pygame.draw.lines(canvas,'#39434b',False,arch(x,y,19+depth*344,22+depth*330),max(1,round(3*depth)))
+            pygame.draw.lines(canvas,'#35434d',False,arch(x,y,19+depth*344,22+depth*330),max(1,round(2*depth)))
+        # Continuous services and wall panels converge with the road.
+        for side in (-.72,1.72):
+            for rise, color in ((36,'#48565e'),(48,'#384751'),(90,'#25343f')):
+                points=[]
+                for depth in (0,.2,.5,1):
+                    x,y=project(side,depth)
+                    points.append((x,y-rise*depth))
+                pygame.draw.lines(canvas,color,False,points,2)
         exit_depth = 37/(37+car.tunnel_length+gap)
         x, y = project(.5, exit_depth)
         width, height = 10+exit_depth*265, 22+exit_depth*330
@@ -98,14 +149,29 @@ def draw_road(canvas, car, viewport):
         pygame.draw.polygon(canvas,'#c2d8dd',arch(x,y,width,height))
     else:
         canvas.blit(sky(viewport.size,round(rain_intensity*20)),viewport.topleft)
-        hills = [(viewport.left,horizon+15)]
-        for step in range(21):
-            x = viewport.left + step*viewport.width/20
-            height = 5+21*abs(math.sin(step*.46-2.1))
-            hills.append((x,horizon-height))
-        hills.append((viewport.right,horizon+15))
-        pygame.draw.polygon(canvas,'#536b72',hills)
-        canvas.fill('#354d44', (viewport.left,horizon+5,viewport.width,ground-horizon))
+        near = pygame.Color('#405946').lerp(pygame.Color('#3f5554'),rain_intensity)
+        far = pygame.Color('#738875').lerp(pygame.Color('#687d7d'),rain_intensity)
+        for row in range(ground-horizon):
+            depth = row/(ground-horizon)
+            color = far.lerp(near,min(1,depth*1.6))
+            pygame.draw.line(canvas,color,(viewport.left,horizon+row),(viewport.right,horizon+row))
+        # Sparse verge texture travels with the ground, not with elapsed wall time.
+        for index in range(70):
+            depth=((index/70+car.distance/190)%1)**2
+            side=-1.1-(index*.37)%4.2 if index%2 else 2.1+(index*.41)%4.2
+            x,y=project(side,depth)
+            pygame.draw.line(canvas,'#4b6451',(x,y),(x+7*depth,y-2*depth),max(1,round(depth*2)))
+        for index in reversed(range(18)):
+            ahead=(index*23-car.distance)%414
+            depth=32/(32+ahead)
+            for side in (-1,1):
+                lateral=-2.15 if side<0 else 3.15
+                x,y=project(lateral+((index*1.37)%2.6)*side,depth)
+                height=round(10+depth*(110+(index%3)*20))
+                tree=tree_sprite(height,index%3,round(rain_intensity*20))
+                if viewport.left-tree.get_width()<x<viewport.right+tree.get_width():
+                    pygame.draw.ellipse(canvas,'#344e42',(x-tree.get_width()*.3,y-3,tree.get_width()*.9,max(2,height*.08)))
+                    canvas.blit(tree,(x-tree.get_width()/2,y-height))
         if tunnel and gap > 0:
             depth = 43/(43+gap)
             x, bottom = project(.5, depth)
@@ -114,6 +180,12 @@ def draw_road(canvas, car, viewport):
             pygame.draw.polygon(canvas, '#92a1a6', arch(x,bottom,width,height))
             pygame.draw.polygon(canvas, '#53636b', arch(x,bottom,width*.88,height*.91))
             pygame.draw.polygon(canvas, '#1a2129', arch(x,bottom,width*.75,height*.80))
+            pygame.draw.lines(canvas,'#bdc5c1',False,arch(x,bottom,width*.94,height*.96),max(1,round(depth*4)))
+            for side in (-1,1):
+                lamp_x=x+side*width*.56
+                lamp_y=bottom-height*.57
+                lamp(canvas,lamp_x,lamp_y,2+depth*3,(249,221,169))
+                pygame.draw.line(canvas,'#ffe1a7',(lamp_x-2-depth*3,lamp_y),(lamp_x+2+depth*3,lamp_y),max(1,round(depth*3)))
 
     band(-.67,1.67,'#596671' if inside else '#747b76')
     road_color = pygame.Color('#353f49').lerp(pygame.Color('#283641'), rain_intensity)
@@ -123,6 +195,12 @@ def draw_road(canvas, car, viewport):
         depth = strip/40
         shade = road_color.lerp(pygame.Color('#17212b'), depth*.18)
         band(-.5,1.5,shade,depth,(strip+1)/40)
+    for index in range(150):
+        depth=((index/150+car.distance/105)%1)**2
+        lateral=-.46+(index*.617)%1.92
+        x,y=project(lateral,depth)
+        color=road_color.lerp(pygame.Color('#bac1c1'),.035+depth*.025)
+        pygame.draw.line(canvas,color,(x,y),(x+max(1,depth*2),y),1)
     if storm:
         # Narrow, low-contrast streaks suggest wet asphalt rather than paving tiles.
         for index in range(32):
@@ -164,6 +242,7 @@ def draw_road(canvas, car, viewport):
             x, y = project(side, depth)
             if inside:
                 lamp_y = y-15-160*depth
+                lamp(canvas,x,lamp_y,2+depth*7,(246,218,165))
                 pygame.draw.line(canvas, '#685f50', (x-14*depth,lamp_y), (x+14*depth,lamp_y), 4+round(5*depth))
                 pygame.draw.line(canvas, '#f7deaa', (x-9*depth,lamp_y), (x+9*depth,lamp_y), 2+round(2*depth))
             else:

@@ -105,3 +105,8 @@ I requested a discoverable return to scenario selection and questioned zero read
 ### Startup calibration and full-screen display
 
 I asked for an initial calibration reminder and a larger launch window. The app now opens full screen, with F11 to toggle windowed mode or --windowed at launch. A first-launch dialog explains calibration and offers C or a Calibrate button. It closes after successful calibration and stays visible after failure. Skip for now (K) allows testing without a webcam. The reminder appears once each application launch; later calibration remains available with C. Starting a drive is blocked only while this dismissible dialog is open. Smoke rendering uses a window-sized off-screen display and captures the dialog; live full-screen appearance needs user review.
+
+
+### Visual refinement — 17 November 2026
+
+I requested a more realistic presentation while preserving the driving logic and excluding the cockpit overlay. Codex added layered scenery, tunnel lighting, asphalt detail, a speed gauge, a simulated lane-position indicator and head-angle displays. Collision and stopped-state colours were clarified. Automated checks passed for driving scenarios, tracking loss and head-return reminders. A synthetic rendering review covered 22 interface states and three window sizes; these are layout checks, not evidence of live driving or camera performance. My live review of this visual revision is pending.
