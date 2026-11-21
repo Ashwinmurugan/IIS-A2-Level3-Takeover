@@ -1,6 +1,6 @@
 # Level 3 Takeover Simulation
 
-README prose word count: 1688 (excluding commands and this line).
+README prose word count: 1813 (excluding commands and this line).
 
 ## Project status
 
@@ -110,3 +110,7 @@ I asked for an initial calibration reminder and a larger launch window. The app 
 ### Visual refinement — 17 November 2026
 
 I requested a more realistic presentation while preserving the driving logic and excluding the cockpit overlay. Codex added layered scenery, tunnel lighting, asphalt detail, a speed gauge, a simulated lane-position indicator and head-angle displays. Collision and stopped-state colours were clarified. Automated checks passed for driving scenarios, tracking loss and head-return reminders. A synthetic rendering review covered 22 interface states and three window sizes; these are layout checks, not evidence of live driving or camera performance. My live review of this visual revision is pending.
+
+### Correcting the up/down head labels
+
+During live testing, I noticed that looking up appeared as “Looking down” in the event log, and looking down appeared as “Looking up”. I reported the reversal, and Codex corrected the direction mapping and ran the monitoring checks. I then tested both movements again with my webcam and confirmed that the live log showed the correct direction in each case. Commit `7443631`.
